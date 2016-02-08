@@ -6,6 +6,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 #include <stdarg.h>
 #include "cert.h"
+#include "pk11func.h"
 #include "ssl.h"
 #include "sslimpl.h"
 #include "sslproto.h"
@@ -84,5 +85,49 @@ ssl_Trace(const char *format, ...)
         fputs(buf, ssl_trace_iob);
         fputs("\n", ssl_trace_iob);
     }
+}
+
+
+void
+ssl_DumpBytes(const char *msg, const void* vp, int len)
+{
+    char hex_data[132];
+    char *bp = hex_data;
+    int ct;
+    int max_bytes;
+    PRUint8 *buf = (PRUint8 *)vp;
+
+    max_bytes = PR_MIN(64, len);
+
+    for (ct = 0; ct < max_bytes; ++ct) {
+        *bp++ = hex[buf[ct] >> 4];
+        *bp++ = hex[buf[ct] & 0x0f];
+    }
+    if (max_bytes < len) {
+        *bp++ = '.';
+        *bp++ = '.';
+        *bp++ = '.';
+    }
+    *bp++ = '\0';
+    SSL_TRC(10, ("%s [%d]: %s", msg, len, hex_data));
+}
+
+void
+ssl_DumpKey(const char *msg, PK11SymKey* key)
+{
+    SECStatus rv;
+    SECItem *rawkey;
+
+    rv = PK11_ExtractKeyValue(key);
+    if (rv != SECSuccess) {
+        SSL_TRC(10, ("Could not extract key for %s", msg));
+        return;
+    }
+    rawkey = PK11_GetKeyData(key);
+    if (!rawkey) {
+        SSL_TRC(10, ("Could not extract key for %s", msg));
+        return;
+    }
+    ssl_DumpBytes(msg, rawkey->data, rawkey->len);
 }
 #endif
