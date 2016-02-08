@@ -9,8 +9,10 @@
 #include "keyhi.h"
 #include "pk11func.h"
 #include "secitem.h"
+#include "ssl.h"
 #include "sslt.h"
 #include "sslerr.h"
+#include "sslimpl.h"
 
 // TODO(ekr@rtfm.com): Export this separately.
 unsigned char *tls13_EncodeUintX(PRUint32 value, unsigned int bytes, unsigned char *to);
@@ -81,8 +83,9 @@ tls13_HkdfExtract(PK11SymKey *ikm1, PK11SymKey *ikm2, SSLHashType baseHash,
                       CKA_DERIVE, kTlsHkdfInfo[baseHash].hashSize);
     if (!prk)
         return SECFailure;
-
+    DUMP_KEY(10, ("HKDF Extract", prk));
     *prkp = prk;
+
     return SECSuccess;
 }
 
@@ -163,6 +166,21 @@ tls13_HkdfExpandLabel(PK11SymKey *prk, SSLHashType baseHash,
         return SECFailure;
 
     *keyp = derived;
+
+#ifdef TRACE
+    if (ssl_trace >= 10) {
+        /* Make sure the label is null terminated. */
+        char labelStr[100];
+        PORT_Memcpy(labelStr, label, labelLen);
+        labelStr[labelLen] = 0;
+        SSL_TRC(10, ("HKDF Extract: label='%s',requested length=%d",
+                     labelStr, keySize));
+    }
+    DUMP_KEY(10, ("PRK", prk));
+    DUMP_BYTES(10, ("Hash", handshakeHash, handshakeHashLen));
+    DUMP_BYTES(10, ("Info", info, infoLen));
+    DUMP_KEY(10, ("Derived key", derived));
+#endif
 
     return SECSuccess;
 

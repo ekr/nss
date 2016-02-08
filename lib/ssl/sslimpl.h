@@ -93,6 +93,14 @@ extern int Debug;
 #define SSL_TRC(a, b)
 #define PRINT_BUF(a, b)
 #define DUMP_MSG(a, b)
+#define DUMP_KEY(a,b) if (ssl_trace >= (a)) ssl_DumpKey b
+#define DUMP_BYTES(a,b) if (ssl_trace >= (a)) ssl_DumpBytes b
+#else
+#define SSL_TRC(a,b)
+#define PRINT_BUF(a,b)
+#define DUMP_MSG(a,b)
+#define DUMP_KEY(a,b)
+#define DUMP_BYTES(a,b)
 #endif
 
 #ifdef DEBUG
@@ -2114,6 +2122,8 @@ ssl3_TLSHashAlgorithmToOID(SSLHashType hashFunc);
 #endif
 
 void ssl_Trace(const char *format, ...);
+void ssl_DumpBytes(const char *msg, const void* vp, int len);
+void ssl_DumpKey(const char *msg, PK11SymKey* key);
 
 SEC_END_PROTOS
 
