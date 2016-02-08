@@ -298,8 +298,11 @@ void TlsConnectTestBase::CheckResumption(SessionResumptionMode expected) {
   EXPECT_EQ(stateless_ct, stats->hch_sid_stateless_resumes);
   EXPECT_EQ(stateless_ct, stats->hsh_sid_stateless_resumes);
 
-  if (resume_ct) {
+  if (resume_ct &&
+      client_->version() < SSL_LIBRARY_VERSION_TLS_1_3) {
     // Check that the last two session ids match.
+    // TLS 1.3 doesn't do session id-based resumption. It's all
+    // tickets.
     EXPECT_EQ(2U, session_ids_.size());
     EXPECT_EQ(session_ids_[session_ids_.size()-1],
               session_ids_[session_ids_.size()-2]);
