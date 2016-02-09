@@ -173,7 +173,7 @@ tls13_HkdfExpandLabel(PK11SymKey *prk, SSLHashType baseHash,
         char labelStr[100];
         PORT_Memcpy(labelStr, label, labelLen);
         labelStr[labelLen] = 0;
-        SSL_TRC(10, ("HKDF Extract: label='%s',requested length=%d",
+        SSL_TRC(10, ("HKDF Expand: label=[TLS 1.3, ] + '%s',requested length=%d",
                      labelStr, keySize));
     }
     DUMP_KEY(10, ("PRK", prk));
