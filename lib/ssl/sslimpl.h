@@ -89,10 +89,6 @@ extern int Debug;
 #define DUMP_MSG(a, b)    \
     if (ssl_trace >= (a)) \
     ssl_DumpMsg b
-#else
-#define SSL_TRC(a, b)
-#define PRINT_BUF(a, b)
-#define DUMP_MSG(a, b)
 #define DUMP_KEY(a,b) if (ssl_trace >= (a)) ssl_DumpKey b
 #define DUMP_BYTES(a,b) if (ssl_trace >= (a)) ssl_DumpBytes b
 #else
