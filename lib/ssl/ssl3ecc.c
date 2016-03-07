@@ -1403,7 +1403,7 @@ ssl3_HandleSupportedPointFormatsXtn(sslSocket *ss, PRUint16 ex_type,
     return SECSuccess;
 }
 
-#define SSL3_GET_SERVER_PUBLICKEY(sock, type)                                          \
+#define SSL_GET_SERVER_PUBLICKEY(sock, type)                                           \
     (ss->serverCerts[type].serverKeyPair ? ss->serverCerts[type].serverKeyPair->pubKey \
                                          : NULL)
 
@@ -1414,7 +1414,7 @@ ssl3_GetSvrCertCurveName(sslSocket *ss)
     SECKEYPublicKey *srvPublicKey;
     ECName ec_curve = ec_noName;
 
-    srvPublicKey = SSL3_GET_SERVER_PUBLICKEY(ss, kt_ecdh);
+    srvPublicKey = SSL_GET_SERVER_PUBLICKEY(ss, kt_ecdh);
     if (srvPublicKey) {
         ec_curve = ssl3_PubKey2ECName(srvPublicKey);
     }

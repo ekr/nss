@@ -10,6 +10,32 @@
 #include "sslimpl.h"
 #include "ssl3prot.h"
 
+/* Caller should hold RecvBufLock. */
+SECStatus
+ssl_InitGather(sslGather *gs)
+{
+    SECStatus status;
+
+    gs->state = GS_INIT;
+    gs->writeOffset = 0;
+    gs->readOffset = 0;
+    gs->dtlsPacketOffset = 0;
+    gs->dtlsPacket.len = 0;
+    status = sslBuffer_Grow(&gs->buf, 4096);
+    return status;
+}
+
+/* Caller must hold RecvBufLock. */
+void
+ssl_DestroyGather(sslGather *gs)
+{
+    if (gs) { /* the PORT_*Free functions check for NULL pointers. */
+        PORT_ZFree(gs->buf.buf, gs->buf.space);
+        PORT_Free(gs->inbuf.buf);
+        PORT_Free(gs->dtlsPacket.buf);
+    }
+}
+
 /*
  * Attempt to read in an entire SSL3 record.
  * Blocks here for blocking sockets, otherwise returns -1 with
