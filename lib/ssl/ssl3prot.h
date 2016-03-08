@@ -81,6 +81,7 @@ typedef enum { alert_warning = 1,
 
 typedef enum {
     close_notify = 0,
+    end_of_early_data = 1, /* TLS 1.3 */
     unexpected_message = 10,
     bad_record_mac = 20,
     decryption_failed_RESERVED = 21, /* do not send; see RFC 5246 */

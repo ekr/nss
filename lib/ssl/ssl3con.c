@@ -3659,6 +3659,11 @@ ssl3_HandleAlert(sslSocket *ss, sslBuffer *buf)
         case bad_certificate_hash_value:
             error = SSL_ERROR_BAD_CERT_HASH_VALUE_ALERT;
             break;
+
+        case end_of_early_data:
+            error = SSL_ERROR_END_OF_EARLY_DATA_ALERT;
+            break;
+
         default:
             error = SSL_ERROR_RX_UNKNOWN_ALERT;
             break;
@@ -3677,6 +3682,13 @@ ssl3_HandleAlert(sslSocket *ss, sslBuffer *buf)
         }
         PORT_SetError(error);
         return SECFailure;
+    }
+    if (desc == end_of_early_data) {
+        if (ss->version < SSL_LIBRARY_VERSION_TLS_1_3) {
+            PORT_SetError(error);
+            return SECFailure;
+        }
+        return tls13_HandleEndOfEarlyData(ss);
     }
     if ((desc == no_certificate) && (ss->ssl3.hs.ws == wait_client_cert)) {
         /* I'm a server. I've requested a client cert. He hasn't got one. */
@@ -5804,6 +5816,13 @@ ssl3_SendClientHello(sslSocket *ss, PRBool resending)
     rv = ssl3_FlushHandshake(ss, flags);
     if (rv != SECSuccess) {
         return rv; /* error code set by ssl3_FlushHandshake */
+    }
+
+    if (ss->version >= SSL_LIBRARY_VERSION_TLS_1_3) {
+        rv = tls13_MaybeDo0RTTHandshake(ss);
+        if (rv != SECSuccess) {
+            return rv; /* error code set by tls13_MaybeDo0RttHandshake */
+        }
     }
 
     ss->ssl3.hs.ws = wait_server_hello;
@@ -12198,7 +12217,9 @@ ssl3_HandleHandshakeMessage(sslSocket *ss, SSL3Opaque *b, PRUint32 length)
     /* We should not include hello_request and hello_verify_request messages
      * in the handshake hashes */
     if ((ss->ssl3.hs.msg_type != hello_request) &&
-        (ss->ssl3.hs.msg_type != hello_verify_request)) {
+        (ss->ssl3.hs.msg_type != hello_verify_request) &&
+        (!(ss->ssl3.hs.msg_type == finished &&
+           TLS13_IN_HS_STATE(ss, wait_0rtt_finished)))) {
         rv = ssl3_UpdateHandshakeHashes(ss, (unsigned char *)hdr, 4);
         if (rv != SECSuccess)
             return rv; /* err code already set. */
@@ -13104,6 +13125,13 @@ ssl3_HandleRecord(sslSocket *ss, SSL3Ciphertext *cText, sslBuffer *databuf)
     if (rType == content_application_data) {
         if (ss->firstHsDone)
             return SECSuccess;
+        if (ss->version >= SSL_LIBRARY_VERSION_TLS_1_3 &&
+            ss->sec.isServer) {
+            rv = tls13_HandleEarlyApplicationData(ss, databuf);
+            if (rv == SECSuccess) {
+                return SECSuccess;
+            }
+        }
         (void)SSL3_SendAlert(ss, alert_fatal, unexpected_message);
         PORT_SetError(SSL_ERROR_RX_UNEXPECTED_APPLICATION_DATA);
         return SECFailure;
@@ -13244,9 +13272,8 @@ ssl3_InitState(sslSocket *ss)
     PR_INIT_CLIST(&ss->ssl3.hs.remoteKeyShares);
     ss->ssl3.hs.xSS = NULL;
     ss->ssl3.hs.xES = NULL;
+    ss->ssl3.hs.masterSecret = NULL;
     ss->ssl3.hs.trafficSecret = NULL;
-    ss->ssl3.hs.clientFinishedSecret = NULL;
-    ss->ssl3.hs.serverFinishedSecret = NULL;
     ss->ssl3.hs.certReqContextLen = 0;
 
     PORT_Assert(!ss->ssl3.hs.messages.buf && !ss->ssl3.hs.messages.space);
@@ -13636,12 +13663,10 @@ ssl3_DestroySSL3Info(sslSocket *ss)
         PK11_FreeSymKey(ss->ssl3.hs.xSS);
     if (ss->ssl3.hs.xES)
         PK11_FreeSymKey(ss->ssl3.hs.xES);
+    if (ss->ssl3.hs.masterSecret)
+        PK11_FreeSymKey(ss->ssl3.hs.masterSecret);
     if (ss->ssl3.hs.trafficSecret)
         PK11_FreeSymKey(ss->ssl3.hs.trafficSecret);
-    if (ss->ssl3.hs.clientFinishedSecret)
-        PK11_FreeSymKey(ss->ssl3.hs.clientFinishedSecret);
-    if (ss->ssl3.hs.serverFinishedSecret)
-        PK11_FreeSymKey(ss->ssl3.hs.serverFinishedSecret);
 
     if (ss->ssl3.dheGroups) {
         PORT_Free(ss->ssl3.dheGroups);

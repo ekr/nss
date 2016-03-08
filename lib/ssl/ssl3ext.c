@@ -124,6 +124,11 @@ static SECStatus tls13_ServerHandlePreSharedKeyXtn(sslSocket *ss,
 static SECStatus tls13_ClientHandlePreSharedKeyXtn(sslSocket *ss,
                                                    PRUint16 ex_type,
                                                    SECItem *data);
+static SECStatus tls13_ClientSendEarlyDataXtn(sslSocket * ss,
+                                              PRBool      append,
+                                              PRUint32    maxBytes);
+static SECStatus tls13_ServerHandleEarlyDataXtn(sslSocket *ss, PRUint16 ex_type,
+                                                SECItem *data);
 
 
 /*
@@ -295,6 +300,7 @@ static const ssl3HelloExtensionHandler clientHelloHandlers[] = {
     { ssl_signed_cert_timestamp_xtn, &ssl3_ServerHandleSignedCertTimestampXtn },
     { ssl_tls13_key_share_xtn, &tls13_ServerHandleKeyShareXtn },
     { ssl_tls13_pre_shared_key_xtn, &tls13_ServerHandlePreSharedKeyXtn },
+    { ssl_tls13_early_data_xtn, &tls13_ServerHandleEarlyDataXtn },
     { -1, NULL }
 };
 
@@ -345,7 +351,8 @@ static const ssl3HelloExtensionSender clientHelloSendersTLS[SSL_MAX_EXTENSIONS] 
       { ssl_tls13_draft_version_xtn, &ssl3_ClientSendDraftVersionXtn },
       { ssl_signed_cert_timestamp_xtn, &ssl3_ClientSendSignedCertTimestampXtn },
       { ssl_tls13_key_share_xtn, &tls13_ClientSendKeyShareXtn },
-      { ssl_tls13_pre_shared_key_xtn, &tls13_ClientSendPreSharedKeyXtn }
+      { ssl_tls13_pre_shared_key_xtn, &tls13_ClientSendPreSharedKeyXtn },
+      { ssl_tls13_early_data_xtn, &tls13_ClientSendEarlyDataXtn },
       /* any extra entries will appear as { 0, NULL }    */
     };
 
@@ -3462,6 +3469,135 @@ tls13_ClientHandlePreSharedKeyXtn(sslSocket *ss, PRUint16 ex_type,
             &ss->sec.ci.sid->u.ssl3.locked.sessionTicket.ticket,
                              data) != SECEqual) {
         PORT_SetError(SSL_ERROR_MALFORMED_PRE_SHARED_KEY);
+        return SECFailure;
+    }
+
+    /* Keep track of negotiated extensions. */
+    ss->xtnData.negotiated[ss->xtnData.numNegotiated++] = ex_type;
+
+    return SECSuccess;
+}
+
+/*
+ *  struct {
+ *       select (Role) {
+ *           case client:
+ *               opaque configuration_id<1..2^16-1>;
+ *               CipherSuite cipher_suite;
+ *               Extension extensions<0..2^16-1>;
+ *               opaque context<0..255>;
+ *
+ *           case server:
+ *              struct {};
+ *       }
+ *   } EarlyDataIndication;
+ *
+ * This will probably change if/when we move to PSK-only
+ * resumption.
+ */
+static SECStatus
+tls13_ClientSendEarlyDataXtn(sslSocket * ss,
+                             PRBool      append,
+                             PRUint32    maxBytes)
+{
+    PRInt32 extension_length;
+    SECStatus rv;
+    sslSessionID *sid = ss->sec.ci.sid;
+
+    /* 0-RTT is only permitted if:
+     *
+     * 1. We are doing TLS 1.3
+     * 2. We have a valid ticket.
+     * 3. The 0-RTT option is set.
+     */
+    if ((sid->version < SSL_LIBRARY_VERSION_TLS_1_3) ||
+        (!ss->xtnData.ticketTimestampVerified &&
+         !ssl3_ClientExtensionAdvertised(ss, ssl_tls13_pre_shared_key_xtn)) ||
+        !ss->opt.enable0RttData) {
+        return 0;
+    }
+
+    /* type + length + empty configuration id + cipher suite +
+       empty extensions + empty context. */
+    extension_length = 2 + 2 + 2 + 2 + 2 + 1;
+
+    if (maxBytes < (PRUint32)extension_length) {
+        PORT_Assert(0);
+        return 0;
+    }
+
+    if (append) {
+        sslSessionID *sid = ss->sec.ci.sid;
+
+        rv = ssl3_AppendHandshakeNumber(ss, ssl_tls13_early_data_xtn, 2);
+        if (rv != SECSuccess)
+            return -1;
+
+        rv = ssl3_AppendHandshakeNumber(ss, extension_length - 4, 2);
+        if (rv != SECSuccess)
+            return -1;
+
+        /* Configuration ID */
+        rv = ssl3_AppendHandshakeNumber(ss, 0, 2);
+        if (rv != SECSuccess)
+            return -1;
+
+        /* Cipher suite */
+        // TODO(ekr@rtfm.com): Fill in the PSK ID here.
+        rv = ssl3_AppendHandshakeNumber(ss, sid->u.ssl3.cipherSuite, 2);
+        if (rv != SECSuccess)
+            return -1;
+
+        /* Extensions */
+        rv = ssl3_AppendHandshakeNumber(ss, 0, 2);
+        if (rv != SECSuccess)
+            return -1;
+
+        /* Context */
+        rv = ssl3_AppendHandshakeNumber(ss, 0, 1);
+        if (rv != SECSuccess)
+            return -1;
+    }
+
+    ss->xtnData.advertised[ss->xtnData.numAdvertised++] =
+            ssl_tls13_early_data_xtn;
+
+    return extension_length;
+}
+
+static SECStatus
+tls13_ServerHandleEarlyDataXtn(sslSocket *ss, PRUint16 ex_type,
+                               SECItem *data)
+{
+    PRInt32 tmp;
+
+    /* If we are doing < TLS 1.3, then ignore this. */
+    if (ss->version < SSL_LIBRARY_VERSION_TLS_1_3) {
+        return SECSuccess;
+    }
+
+    /* Configuration ID: must be zero length. */
+    tmp = ssl3_ConsumeHandshakeNumber(ss, 2, &data->data, &data->len);
+    if (tmp)
+        return SECFailure;
+
+    /* Cipher suite. Currently ignoring. */
+    tmp = ssl3_ConsumeHandshakeNumber(ss, 2, &data->data, &data->len);
+    if (tmp < 0)
+        return SECFailure;
+
+    /* Extensions: must be zero length. */
+    tmp = ssl3_ConsumeHandshakeNumber(ss, 2, &data->data, &data->len);
+    if (tmp)
+        return SECFailure;
+
+    /* Context: must be zero length. */
+    tmp = ssl3_ConsumeHandshakeNumber(ss, 1, &data->data, &data->len);
+    if (tmp)
+        return SECFailure;
+
+    if (data->len) {
+        PORT_SetError(SSL_ERROR_MALFORMED_EARLY_DATA);
         return SECFailure;
     }
 

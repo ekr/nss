@@ -229,6 +229,14 @@ void TlsAgent::SetSessionCacheEnabled(bool en) {
   EXPECT_EQ(SECSuccess, rv);
 }
 
+void TlsAgent::Set0RttEnabled(bool en) {
+  EXPECT_TRUE(EnsureTlsSetup());
+
+  SECStatus rv = SSL_OptionSet(ssl_fd_, SSL_ENABLE_0RTT_DATA,
+                               en ? PR_TRUE : PR_FALSE);
+  EXPECT_EQ(SECSuccess, rv);
+}
+
 void TlsAgent::SetVersionRange(uint16_t minver, uint16_t maxver) {
    vrange_.min = minver;
    vrange_.max = maxver;

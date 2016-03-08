@@ -915,6 +915,8 @@ TEST_F(TlsConnectTest, TestTls13Resumption) {
 
   ResetRsa();
   ConfigureSessionCache(RESUME_BOTH, RESUME_TICKET);
+  client_->Set0RttEnabled(true);
+  server_->Set0RttEnabled(true);
   client_->SetVersionRange(SSL_LIBRARY_VERSION_TLS_1_1,
                            SSL_LIBRARY_VERSION_TLS_1_3);
   server_->SetVersionRange(SSL_LIBRARY_VERSION_TLS_1_1,
