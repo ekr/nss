@@ -362,6 +362,7 @@ typedef struct sslOptionsStr {
     unsigned int enableServerDhe            : 1;  /* 30 */
     unsigned int enableExtendedMS           : 1;  /* 31 */
     unsigned int enableSignedCertTimestamps : 1;  /* 32 */
+    unsigned int enable0RttData             : 1;  /* 33 */
 } sslOptions;
 /* clang-format on */
 
@@ -597,6 +598,7 @@ typedef struct {
     DTLSRecvdRecords recvdRecords;
 
     PRUint8 refCt;
+    char *phase;
 } ssl3CipherSpec;
 
 typedef enum { never_cached,
@@ -789,6 +791,8 @@ typedef enum {
     wait_new_session_ticket,
     wait_encrypted_extensions,
     idle_handshake,
+    wait_0rtt_finished,
+    wait_0rtt_end_of_early_data,  /* Not processed by handshake code. */
     wait_invalid /* Invalid value. There is no handshake message "invalid". */
 } SSL3WaitState;
 
@@ -852,6 +856,11 @@ typedef struct TLS13KeyShareEntryStr {
     PRUint16 group;       /* The group for the entry */
     SECItem key_exchange; /* The share itself */
 } TLS13KeyShareEntry;
+
+typedef struct TLS13EarlyDataStr {
+    PRCList link;         /* The linked list link */
+    SECItem data;         /* The data */
+} TLS13EarlyData;
 
 typedef enum {
     handshake_hash_unknown = 0,
@@ -973,10 +982,9 @@ typedef struct SSL3HandshakeStateStr {
     PRCList remoteKeyShares;           /* The other side's public keys */
     PK11SymKey *xSS;                   /* Extracted static secret */
     PK11SymKey *xES;                   /* Extracted ephemeral secret */
+    PK11SymKey *masterSecret;          /* TLS 1.3 MS */
     PK11SymKey *trafficSecret;         /* The source key to use to generate
                                         * traffic keys */
-    PK11SymKey *clientFinishedSecret;  /* Used for client Finished */
-    PK11SymKey *serverFinishedSecret;  /* Used for server Finished */
     unsigned char certReqContext[255]; /* Ties CertificateRequest
                                         * to Certificate */
     PRUint8 certReqContextLen;         /* Length of the context
@@ -985,6 +993,9 @@ typedef struct SSL3HandshakeStateStr {
                                         * connection if we are resuming. */
     PRCList cipherSpecs;               /* The cipher specs in the sequence they
                                         * will be applied. */
+    SSL3Hashes hashesClientHello;      /* The hashes snapshots for 0-RTT. */
+    SSL3Hashes hashesClientServerHello;
+    PRCList bufferedEarlyData;         /* Buffered TLS 1.3 early data. */
 } SSL3HandshakeState;
 
 /*
@@ -1685,7 +1696,6 @@ extern SECStatus ssl3_SetPolicy(ssl3CipherSuite which, PRInt32 policy);
 extern SECStatus ssl3_GetPolicy(ssl3CipherSuite which, PRInt32 *policy);
 
 extern void ssl3_InitSocketPolicy(sslSocket *ss);
-extern void ssl3_InitCipherSpec(ssl3CipherSpec *spec);
 
 extern SECStatus ssl3_RedoHandshake(sslSocket *ss, PRBool flushCache);
 extern SECStatus ssl3_HandleHandshakeMessage(sslSocket *ss, SSL3Opaque *b,

@@ -41,6 +41,7 @@ uint8_t kBogusClientKeyExchange[] = {
   0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
   0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
 };
+const char *k0RttData = "ABCDEF";
 
 // When we see the ClientKeyExchange from |client|, increment the
 // ClientHelloVersion on |server|.
@@ -984,6 +985,64 @@ TEST_F(TlsConnectTest, TestTls13ResumptionTwice) {
 
   // TODO(ekr@rtfm.com): This will change when we fix bug 1257047.
   ASSERT_EQ(psk1, psk2);
+}
+
+// Test that two TLS resumptions work and produce the same ticket.
+// This will change after bug 1257047 is fixed.
+class TlsZeroRttInjector : public TlsHandshakeFilter {
+ public:
+  TlsZeroRttInjector(TlsAgent *client) : client_(client), done_(false) {}
+
+  virtual PacketFilter::Action FilterHandshake(
+      const HandshakeHeader& header,
+      const DataBuffer& input, DataBuffer* output) {
+    if (done_)
+      return KEEP;
+
+    PRInt32 rv = SSL_Write0RttData(client_->ssl_fd(),
+                                   k0RttData, strlen(k0RttData));
+    EXPECT_EQ(strlen(k0RttData), (unsigned long)rv);
+    return KEEP;
+  }
+
+ private:
+  TlsAgent *client_;
+  bool done_;
+};
+
+TEST_F(TlsConnectTest, TestTls13ZeroRtt) {
+  ConfigureSessionCache(RESUME_BOTH, RESUME_TICKET);
+  client_->SetVersionRange(SSL_LIBRARY_VERSION_TLS_1_1,
+                           SSL_LIBRARY_VERSION_TLS_1_3);
+  server_->SetVersionRange(SSL_LIBRARY_VERSION_TLS_1_1,
+                           SSL_LIBRARY_VERSION_TLS_1_3);
+  Connect();
+  SendReceive(); // Need to read so that we absorb the session ticket.
+  CheckKeys(ssl_kea_ecdh, ssl_auth_rsa);
+
+  ResetRsa();
+  client_->Set0RttEnabled(true);
+  server_->Set0RttEnabled(true);
+  server_->SetPacketFilter(new TlsZeroRttInjector(client_));
+  ConfigureSessionCache(RESUME_BOTH, RESUME_TICKET);
+  TlsExtensionCapture *c1 =
+      new TlsExtensionCapture(kTlsExtensionPreSharedKey);
+  client_->SetVersionRange(SSL_LIBRARY_VERSION_TLS_1_1,
+                           SSL_LIBRARY_VERSION_TLS_1_3);
+  server_->SetVersionRange(SSL_LIBRARY_VERSION_TLS_1_1,
+                           SSL_LIBRARY_VERSION_TLS_1_3);
+  ExpectResumption(RESUME_TICKET);
+  Connect();
+
+  char buf[1024];
+  PRInt32 rv = SSL_Read0RttData(server_->ssl_fd(),
+                                buf, sizeof(buf));
+  EXPECT_EQ(strlen(k0RttData), (unsigned long)rv);
+  EXPECT_EQ(0, memcmp(buf, k0RttData, rv));
+  SendReceive();
+  CheckKeys(ssl_kea_ecdh, ssl_auth_rsa);
+  DataBuffer psk1(c1->extension());
+  ASSERT_GE(psk1.len(), 0UL);
 }
 
 TEST_P(TlsConnectDatagram, TestDtlsHolddownExpiry) {
