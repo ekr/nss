@@ -2164,7 +2164,7 @@ tls13_FinishHandshake(sslSocket *ss)
         effectiveExchKeyType = ss->ssl3.hs.kea_def->exchKeyType;
     }
 
-    if (!ss->opt.noCache && ss->sec.cache) {
+    if (!ss->opt.noCache && ss->sec.cache && !ss->sec.isServer) {
         rv = ssl3_FillInCachedSID(ss, sid, effectiveExchKeyType);
         if (rv != SECSuccess)
             return SECFailure;
