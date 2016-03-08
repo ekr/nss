@@ -1618,7 +1618,6 @@ tls13_ComputeSecrets2(sslSocket *ss)
     SSL3Hashes hashes;
     ssl3CipherSpec *cwSpec = ss->ssl3.cwSpec;
     PK11SymKey *resumptionMasterSecret = NULL;
-    return SECSuccess;
 
     rv = ssl3_ComputeHandshakeHashes(ss, cwSpec, &hashes, 0);
     if (rv != SECSuccess) {
