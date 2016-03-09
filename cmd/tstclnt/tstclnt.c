@@ -886,13 +886,11 @@ restartHandshakeAfterServerCertIfNeeded(PRFileDesc * fd,
     return rv;
 }
     
-int main(int argc, char **argv)
+int sub_main(int argc, char **argv)
 {
     PRFileDesc *       s;
     PRFileDesc *       std_out;
     char *             host	=  NULL;
-    char *             certDir  =  NULL;
-    char *             nickname =  NULL;
     char *             cipherString = NULL;
     char *             tmp;
     int                multiplier = 0;
@@ -904,7 +902,6 @@ int main(int argc, char **argv)
     SSLVersionRange    enabledVersions;
     int                bypassPKCS11 = 0;
     int                disableLocking = 0;
-    int                useExportPolicy = 0;
     int                enableSessionTickets = 0;
     int                enableCompression = 0;
     int                enableFalseStart = 0;
@@ -928,12 +925,10 @@ int main(int argc, char **argv)
     PRUint16           portno = 443;
     char *             hs1SniHostName = NULL;
     char *             hs2SniHostName = NULL;
+    char *             nickname =  NULL;
     PLOptState *optstate;
     PLOptStatus optstatus;
     PRStatus prStatus;
-    PRBool openDB = PR_TRUE;
-    PRBool loadDefaultRootCAs = PR_FALSE;
-    char *rootModule = NULL;
 
     serverCertAuth.shouldPause = PR_TRUE;
     serverCertAuth.isPaused = PR_FALSE;
@@ -973,7 +968,7 @@ int main(int argc, char **argv)
 
           case 'C': ++dumpServerChain; 			break;
 
-          case 'D': openDB = PR_FALSE; 			break;
+          case 'D': break;
 
           case 'F': if (serverCertAuth.testFreshStatusFromSideChannel) {
                         /* parameter given twice or more */
@@ -1007,7 +1002,7 @@ int main(int argc, char **argv)
                     };
                     break;
 
-          case 'R': rootModule = PORT_Strdup(optstate->value); break;
+          case 'R': break;
 
           case 'S': skipProtoHeader = PR_TRUE;                 break;
 
@@ -1032,13 +1027,13 @@ int main(int argc, char **argv)
                     }
                     break;
 
-          case 'b': loadDefaultRootCAs = PR_TRUE;                 break;
+          case 'b': break;
 
           case 'c': cipherString = PORT_Strdup(optstate->value); break;
 
           case 'g': enableFalseStart = 1; 		break;
 
-          case 'd': certDir = PORT_Strdup(optstate->value);   break;
+          case 'd': break;
 
           case 'f': clientSpeaksFirst = PR_TRUE;        break;
 
@@ -1078,8 +1073,6 @@ int main(int argc, char **argv)
                 pwdata.data = PORT_Strdup(optstate->value);
                 break;
 
-	  case 'x': useExportPolicy = 1; 		break;
-
 	  case 'z': enableCompression = 1;		break;
 	}
     }
@@ -1100,19 +1093,6 @@ int main(int argc, char **argv)
         exit(1);
     }
 
-    if (certDir && !openDB) {
-        fprintf(stderr, "%s: Cannot combine parameters -D and -d\n", progName);
-        exit(1);
-    }
-
-    if (rootModule && loadDefaultRootCAs) {
-        fprintf(stderr, "%s: Cannot combine parameters -b and -R\n", progName);
-        exit(1);
-    }
-
-    PR_Init( PR_SYSTEM_THREAD, PR_PRIORITY_NORMAL, 1);
-
-    PK11_SetPasswordFunc(SECU_GetModulePassword);
 
     status = PR_StringToNetAddr(host, &addr);
     if (status == PR_SUCCESS) {
@@ -1193,42 +1173,6 @@ int main(int argc, char **argv)
 	return 1;
     }
 
-    /* open the cert DB, the key DB, and the secmod DB. */
-    if (!certDir) {
-        certDir = SECU_DefaultSSLDir(); /* Look in $SSL_DIR */
-        certDir = SECU_ConfigDirectory(certDir);
-    } else {
-        char *certDirTmp = certDir;
-        certDir = SECU_ConfigDirectory(certDirTmp);
-        PORT_Free(certDirTmp);
-    }
-
-    if (openDB) {
-	rv = NSS_Init(certDir);
-	if (rv != SECSuccess) {
-	    SECU_PrintError(progName, "unable to open cert database");
-	    return 1;
-	}
-    } else {
-	rv = NSS_NoDB_Init(NULL);
-	if (rv != SECSuccess) {
-	    SECU_PrintError(progName, "failed to initialize NSS");
-	    return 1;
-	}
-    }
-
-    if (loadDefaultRootCAs) {
-	SECMOD_AddNewModule("Builtins",
-			    DLL_PREFIX"nssckbi."DLL_SUFFIX, 0, 0);
-    } else if (rootModule) {
-	SECMOD_AddNewModule("Builtins", rootModule, 0, 0);
-    }
-
-    /* set the policy bits true for all the cipher suites. */
-    if (useExportPolicy)
-        NSS_SetExportPolicy();
-    else
-        NSS_SetDomesticPolicy();
 
     /* all SSL3 cipher suites are enabled by default. */
     if (cipherString) {
@@ -1640,12 +1584,109 @@ int main(int argc, char **argv)
     PORT_Free(host);
 
     PR_Close(s);
+    return error;
+}
+
+int main(int argc, char **argv)
+{
+    char *runs = PR_GetEnvSecure("NSS_TSTCLNT_RUNS");
+    int todo = runs ? atoi(runs) : 1;
+    PRBool openDB = PR_TRUE;
+    char *             certDir  =  NULL;
+    PRBool loadDefaultRootCAs = PR_FALSE;
+    char *rootModule = NULL;
+    int                useExportPolicy = 0;
+    PLOptState *optstate;
+    PLOptStatus optstatus;
+    SECStatus rv;
+    
+    optstate = PL_CreateOptState(argc, argv,
+                                 "46BCDFGKM:OR:STUV:W:Ya:bc:d:fgh:m:n:op:qr:st:uvw:xz");
+    while ((optstatus = PL_GetNextOpt(optstate)) == PL_OPT_OK) {
+	switch (optstate->option) {
+	  case '?':
+          default : break;
+          case 'D': openDB = PR_FALSE; 			break;
+          case 'R': rootModule = PORT_Strdup(optstate->value); break;
+          case 'b': loadDefaultRootCAs = PR_TRUE;                 break;
+          case 'd': certDir = PORT_Strdup(optstate->value);   break;
+	}
+    }
+
+    PL_DestroyOptState(optstate);
+
+    if (optstatus == PL_OPT_BAD)
+	Usage(progName);
+
+
+    if (certDir && !openDB) {
+        fprintf(stderr, "%s: Cannot combine parameters -D and -d\n", progName);
+        exit(1);
+    }
+
+    if (rootModule && loadDefaultRootCAs) {
+        fprintf(stderr, "%s: Cannot combine parameters -b and -R\n", progName);
+        exit(1);
+    }
+
+    PR_Init( PR_SYSTEM_THREAD, PR_PRIORITY_NORMAL, 1);
+
+    PK11_SetPasswordFunc(SECU_GetModulePassword);
+
+      /* open the cert DB, the key DB, and the secmod DB. */
+    if (!certDir) {
+        certDir = SECU_DefaultSSLDir(); /* Look in $SSL_DIR */
+        certDir = SECU_ConfigDirectory(certDir);
+    } else {
+        char *certDirTmp = certDir;
+        certDir = SECU_ConfigDirectory(certDirTmp);
+        PORT_Free(certDirTmp);
+    }
+
+    if (openDB) {
+	rv = NSS_Init(certDir);
+	if (rv != SECSuccess) {
+	    SECU_PrintError(progName, "unable to open cert database");
+	    return 1;
+	}
+    } else {
+	rv = NSS_NoDB_Init(NULL);
+	if (rv != SECSuccess) {
+	    SECU_PrintError(progName, "failed to initialize NSS");
+	    return 1;
+	}
+    }
+
+    if (loadDefaultRootCAs) {
+	SECMOD_AddNewModule("Builtins",
+			    DLL_PREFIX"nssckbi."DLL_SUFFIX, 0, 0);
+    } else if (rootModule) {
+	SECMOD_AddNewModule("Builtins", rootModule, 0, 0);
+    }
+
+    /* set the policy bits true for all the cipher suites. */
+    if (useExportPolicy)
+        NSS_SetExportPolicy();
+    else
+        NSS_SetDomesticPolicy();
+
+
+  // Explicitly allow negative numbers to be infinite.
+    while(todo != 0) {
+        int ret = sub_main(argc, argv);
+        if (ret) {
+            fprintf(stderr, "ERROR %d\n", ret);
+            return ret;
+        }
+        todo--;
+    }
+
     SSL_ClearSessionCache();
     if (NSS_Shutdown() != SECSuccess) {
         exit(1);
     }
 
-    FPRINTF(stderr, "tstclnt: exiting with return code %d\n", error);
     PR_Cleanup();
-    return error;
+
+    return 0;
 }
