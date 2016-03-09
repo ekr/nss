@@ -1500,6 +1500,7 @@ int sub_main(int argc, char **argv)
 	    } else if (nb == 0) {
 		/* EOF on stdin, stop polling stdin for read. */
 		pollset[STDIN_FD].in_flags = 0;
+                goto done;
 	    } else {
 		char * bufp = buf;
 		FPRINTF(stderr, "%s: Writing %d bytes to server\n", 
