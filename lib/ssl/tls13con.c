@@ -591,6 +591,9 @@ tls13_HandleClientHelloPart2(sslSocket *ss,
 
     if (ss->ssl3.hs.kea_def->signKeyType == ssl_sign_psk &&
         ssl3_ExtensionNegotiated(ss, ssl_tls13_early_data_xtn)) {
+        SSL_TRC(3, ("%d: SSL3[%d]: expecting 0-RTT from client",
+                    SSL_GETPID(), ss->fd));
+
         rv = tls13_ComputeHandshakeHashes(ss, &ss->ssl3.hs.hashesClientHello);
         if (rv != SECSuccess) {
             FATAL_ERROR(ss, SEC_ERROR_LIBRARY_FAILURE, internal_error);

@@ -3370,6 +3370,9 @@ tls13_ServerHandlePreSharedKeyXtn(sslSocket *ss, PRUint16 ex_type,
     PRBool first = PR_TRUE;
     SECStatus rv;
 
+    SSL_TRC(3, ("%d: SSL3[%d]: handle pre_shared_key extension",
+                SSL_GETPID(), ss->fd));
+
     /* If we are doing < TLS 1.3, then ignore this. */
     if (ss->version < SSL_LIBRARY_VERSION_TLS_1_3) {
         return SECSuccess;
@@ -3449,6 +3452,9 @@ tls13_ClientHandlePreSharedKeyXtn(sslSocket *ss, PRUint16 ex_type,
                                   SECItem *data)
 {
     PRInt32 len;
+
+    SSL_TRC(3, ("%d: SSL3[%d]: handle pre_shared_key extension",
+                SSL_GETPID(), ss->fd));
 
     /* If we are doing < TLS 1.3, then ignore this. */
     if (ss->version < SSL_LIBRARY_VERSION_TLS_1_3) {
@@ -3570,6 +3576,9 @@ tls13_ServerHandleEarlyDataXtn(sslSocket *ss, PRUint16 ex_type,
                                SECItem *data)
 {
     PRInt32 tmp;
+
+    SSL_TRC(3, ("%d: SSL3[%d]: handle early_data extension",
+                SSL_GETPID(), ss->fd));
 
     /* If we are doing < TLS 1.3, then ignore this. */
     if (ss->version < SSL_LIBRARY_VERSION_TLS_1_3) {
