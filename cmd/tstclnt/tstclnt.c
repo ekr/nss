@@ -247,7 +247,7 @@ static void PrintParameterUsage(void)
     fprintf(stderr, "%-20s Enforce using an IPv6 destination address\n", "-6");
     fprintf(stderr, "%-20s (Options -4 and -6 cannot be combined.)\n", "");
     fprintf(stderr, "%-20s Enable the extended master secret extension [RFC7627]\n", "-G");
-    fprintf(stderr, "%-20s Enable TLS 1.3 zero-RTT mode\n", "%E");
+    fprintf(stderr, "%-20s Enable TLS 1.3 zero-RTT mode\n", "-E");
 }
 
 static void Usage(const char *progName)
@@ -972,7 +972,7 @@ int sub_main(int argc, char **argv)
 
           case 'D': break;
 
-          case 'E': enableEarlyData = PR_TRUE;
+          case 'E': enableEarlyData = PR_TRUE; break;
 
           case 'F': if (serverCertAuth.testFreshStatusFromSideChannel) {
                         /* parameter given twice or more */
