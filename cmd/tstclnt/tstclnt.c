@@ -91,7 +91,7 @@ PRBool verbose;
 int dumpServerChain = 0;
 int renegotiationsToDo = 0;
 int renegotiationsDone = 0;
-
+int handshakesDone = 0;
 static char *progName;
 
 secuPWData  pwdata          = { PW_NONE, 0 };
@@ -248,7 +248,7 @@ static void PrintParameterUsage(void)
     fprintf(stderr, "%-20s Enforce using an IPv6 destination address\n", "-6");
     fprintf(stderr, "%-20s (Options -4 and -6 cannot be combined.)\n", "");
     fprintf(stderr, "%-20s Enable the extended master secret extension [RFC7627]\n", "-G");
-    fprintf(stderr, "%-20s Enable TLS 1.3 zero-RTT mode\n", "%E");
+    fprintf(stderr, "%-20s Enable TLS 1.3 zero-RTT mode\n", "-E");
 }
 
 static void Usage(const char *progName)
@@ -911,7 +911,7 @@ int sub_main(int argc, char **argv)
     int                enableSignedCertTimestamps = 0;
     int                forceFallbackSCSV = 0;
     int                enableExtendedMasterSecret = 0;
-    int                enableEarlyData = 0;
+    char *             earlyDataValue = NULL;
     PRSocketOptionData opt;
     PRNetAddr          addr;
     PRPollDesc         pollset[2];
@@ -958,7 +958,7 @@ int sub_main(int argc, char **argv)
     SSL_VersionRangeGetSupported(ssl_variant_stream, &enabledVersions);
 
     optstate = PL_CreateOptState(argc, argv,
-                                 "46BCDEFGKM:OR:STUV:W:Ya:bc:d:fgh:m:n:op:qr:st:uvw:xz");
+                                 "46BCDE:FGKM:OR:STUV:W:Ya:bc:d:fgh:m:n:op:qr:st:uvw:xz");
     while ((optstatus = PL_GetNextOpt(optstate)) == PL_OPT_OK) {
 	switch (optstate->option) {
 	  case '?':
@@ -973,7 +973,7 @@ int sub_main(int argc, char **argv)
 
           case 'D': break;
 
-          case 'E': enableEarlyData = PR_TRUE;
+          case 'E': earlyDataValue = PORT_Strdup(optstate->value);	break;
 
           case 'F': if (serverCertAuth.testFreshStatusFromSideChannel) {
                         /* parameter given twice or more */
@@ -1327,7 +1327,7 @@ int sub_main(int argc, char **argv)
     }
 
     /* Enable early data. */
-    if (enableEarlyData) {
+    if (earlyDataValue) {
         rv = SSL_OptionSet(s, SSL_ENABLE_0RTT_DATA, PR_TRUE);
 	if (rv != SECSuccess) {
             SECU_PrintError(progName, "error enabling TLS 1.3 early data");
@@ -1571,6 +1571,15 @@ int sub_main(int argc, char **argv)
 		    error = 1;
 		    goto done;
 	    	}
+                /* Would block. */
+                if (earlyDataValue && handshakesDone) {
+                    SSL_Write0RttData(pollset[SSOCK_FD].fd,
+                                      earlyDataValue,
+                                      strlen(earlyDataValue));
+                    SSL_Write0RttData(pollset[SSOCK_FD].fd,
+                                      "\r\n\r\n", 4);
+                    earlyDataValue = PR_FALSE;
+                }
 	    } else if (nb == 0) {
 		/* EOF from socket... stop polling socket for read */
 		pollset[SSOCK_FD].in_flags = 0;
@@ -1621,7 +1630,7 @@ int main(int argc, char **argv)
     SECStatus rv;
     
     optstate = PL_CreateOptState(argc, argv,
-                                 "46BCDFGKM:OR:STUV:W:Ya:bc:d:fgh:m:n:op:qr:st:uvw:xz");
+                                 "46BCDE:FGKM:OR:STUV:W:Ya:bc:d:fgh:m:n:op:qr:st:uvw:xz");
     while ((optstatus = PL_GetNextOpt(optstate)) == PL_OPT_OK) {
 	switch (optstate->option) {
 	  case '?':
@@ -1698,6 +1707,7 @@ int main(int argc, char **argv)
             fprintf(stderr, "ERROR %d\n", ret);
             return ret;
         }
+        handshakesDone++;
         todo--;
     }
 
