@@ -1614,7 +1614,7 @@ int main(int argc, char **argv)
     SECStatus rv;
     
     optstate = PL_CreateOptState(argc, argv,
-                                 "46BCDFGKM:OR:STUV:W:Ya:bc:d:fgh:m:n:op:qr:st:uvw:xz");
+                                 "46BCDEFGKM:OR:STUV:W:Ya:bc:d:fgh:m:n:op:qr:st:uvw:xz");
     while ((optstatus = PL_GetNextOpt(optstate)) == PL_OPT_OK) {
 	switch (optstate->option) {
 	  case '?':
