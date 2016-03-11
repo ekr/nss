@@ -247,6 +247,7 @@ static void PrintParameterUsage(void)
     fprintf(stderr, "%-20s Enforce using an IPv6 destination address\n", "-6");
     fprintf(stderr, "%-20s (Options -4 and -6 cannot be combined.)\n", "");
     fprintf(stderr, "%-20s Enable the extended master secret extension [RFC7627]\n", "-G");
+    fprintf(stderr, "%-20s Enable TLS 1.3 zero-RTT mode\n", "%E");
 }
 
 static void Usage(const char *progName)
@@ -912,6 +913,7 @@ int main(int argc, char **argv)
     int                enableSignedCertTimestamps = 0;
     int                forceFallbackSCSV = 0;
     int                enableExtendedMasterSecret = 0;
+    int                enableEarlyData = 0;
     PRSocketOptionData opt;
     PRNetAddr          addr;
     PRPollDesc         pollset[2];
@@ -960,7 +962,7 @@ int main(int argc, char **argv)
     SSL_VersionRangeGetSupported(ssl_variant_stream, &enabledVersions);
 
     optstate = PL_CreateOptState(argc, argv,
-                                 "46BCDFGKM:OR:STUV:W:Ya:bc:d:fgh:m:n:op:qr:st:uvw:xz");
+                                 "46BCDEFGKM:OR:STUV:W:Ya:bc:d:fgh:m:n:op:qr:st:uvw:xz");
     while ((optstatus = PL_GetNextOpt(optstate)) == PL_OPT_OK) {
 	switch (optstate->option) {
 	  case '?':
@@ -974,6 +976,8 @@ int main(int argc, char **argv)
           case 'C': ++dumpServerChain; 			break;
 
           case 'D': openDB = PR_FALSE; 			break;
+
+          case 'E': enableEarlyData = PR_TRUE;
 
           case 'F': if (serverCertAuth.testFreshStatusFromSideChannel) {
                         /* parameter given twice or more */
@@ -1377,6 +1381,14 @@ int main(int argc, char **argv)
 	}
     }
 
+    /* Enable early data. */
+    if (enableEarlyData) {
+        rv = SSL_OptionSet(s, SSL_ENABLE_0RTT_DATA, PR_TRUE);
+	if (rv != SECSuccess) {
+            SECU_PrintError(progName, "error enabling TLS 1.3 early data");
+            return 1;
+	}
+    }
     /* enable Signed Certificate Timestamps. */
     rv = SSL_OptionSet(s, SSL_ENABLE_SIGNED_CERT_TIMESTAMPS,
               enableSignedCertTimestamps);
