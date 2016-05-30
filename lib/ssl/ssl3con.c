@@ -11066,7 +11066,48 @@ ssl3_SendEmptyCertificate(sslSocket *ss)
     return ssl3_AppendHandshakeNumber(ss, 0, 3);
 }
 
-SECStatus
+/*
+ * NewSessionTicket
+ * Called from ssl3_HandleFinished
+ */
+static SECStatus
+ssl3_SendNewSessionTicket(sslSocket *ss)
+{
+    SECItem ticket = { 0, NULL, 0 };
+    SECStatus rv;
+
+    rv = ssl3_EncodeSessionTicket(ss, &ticket);
+    if (rv != SECSuccess)
+        goto loser;
+
+    /* Serialize the handshake message. Length =
+     * lifetime (4) + ticket length (2) + ticket. */
+    rv = ssl3_AppendHandshakeHeader(ss, new_session_ticket,
+                                    4 + 2 + ticket.len);
+    if (rv != SECSuccess)
+        goto loser;
+
+    /* This is a fixed value. */
+    rv = ssl3_AppendHandshakeNumber(ss, TLS_EX_SESS_TICKET_LIFETIME_HINT, 4);
+    if (rv != SECSuccess)
+        goto loser;
+
+    /* Encode the ticket. */
+    rv = ssl3_AppendHandshakeVariable(
+        ss, ticket.data, ticket.len, 2);
+    if (rv != SECSuccess)
+        goto loser;
+
+    rv = SECSuccess;
+
+loser:
+    if (ticket.data) {
+        SECITEM_FreeItem(&ticket, PR_FALSE);
+    }
+    return rv;
+}
+
+static SECStatus
 ssl3_HandleNewSessionTicket(sslSocket *ss, SSL3Opaque *b, PRUint32 length)
 {
     SECStatus rv;
