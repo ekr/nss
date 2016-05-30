@@ -31,6 +31,12 @@ typedef enum {
     CipherSpecWrite,
 } CipherSpecDirection;
 
+typedef enum {
+    ticket_allow_early_data = 1,
+    ticket_allow_dhe_resumption = 2,
+    ticket_allow_psk_resumption = 4
+} TLS13SessionTicketFlags;
+
 #define MAX_FINISHED_SIZE 64
 
 static SECStatus tls13_SetCipherSpec(sslSocket *ss, TrafficKeyType type,
@@ -69,6 +75,7 @@ tls13_DeriveSecret(sslSocket *ss, PK11SymKey *key, const char *label,
 static SECStatus tls13_SendFinished(sslSocket *ss, PK11SymKey *baseKey);
 static SECStatus tls13_HandleFinished(sslSocket *ss, SSL3Opaque *b, PRUint32 length,
                                       const TLS13CombinedHash *hashes);
+static SECStatus tls13_SendNewSessionTicket(sslSocket *ss);
 static SECStatus tls13_HandleNewSessionTicket(sslSocket *ss, SSL3Opaque *b,
                                               PRUint32 length);
 static void
@@ -2691,7 +2698,7 @@ tls13_HandleFinished(sslSocket *ss, SSL3Opaque *b, PRUint32 length,
             if (ss->opt.enableSessionTickets &&
                 ss->ssl3.hs.kea_def->authKeyType != ssl_auth_psk) {
                 /* TODO(ekr@rtfm.com): Add support for new tickets in PSK. */
-                rv = ssl3_SendNewSessionTicket(ss);
+                rv = tls13_SendNewSessionTicket(ss);
                 if (rv != SECSuccess) {
                     ssl_ReleaseXmitBufLock(ss);
                     return SECFailure; /* Error code and alerts handled below */
@@ -2829,11 +2836,83 @@ loser:
     return SECFailure;
 }
 
+/*
+    enum { (65535) } TicketExtensionType;
+
+    struct {
+        TicketExtensionType extension_type;
+        opaque extension_data<0..2^16-1>;
+    } TicketExtension;
+
+    struct {
+        uint32 ticket_lifetime;
+        uint32 flags;
+        TicketExtension extensions<2..2^16-2>;
+        opaque ticket<0..2^16-1>;
+    } NewSessionTicket;
+*/
+static SECStatus
+tls13_SendNewSessionTicket(sslSocket *ss)
+{
+    PRUint16 message_length;
+    SECItem ticket_data = { 0, NULL, 0 };
+    SECStatus rv;
+
+    rv = ssl3_EncodeSessionTicket(ss, &ticket_data);
+    if (rv != SECSuccess)
+        goto loser;
+
+    message_length =
+            4 + /* lifetime */
+            4 + /* flags */
+            2 + /* empty extensions */
+            2 + /* ticket length */
+            ticket_data.len;
+
+    rv = ssl3_AppendHandshakeHeader(ss, new_session_ticket,
+                                    message_length);
+    if (rv != SECSuccess)
+        goto loser;
+
+    /* This is a fixed value. */
+    rv = ssl3_AppendHandshakeNumber(ss, TLS_EX_SESS_TICKET_LIFETIME_HINT, 4);
+    if (rv != SECSuccess)
+        goto loser;
+
+    /* Currently we only allow DHE resumption
+     * TODO(ekr@rtfm.com): Update when we add PSK-resumption and 0-RTT.
+     */
+    rv = ssl3_AppendHandshakeNumber(ss,
+                                    ticket_allow_dhe_resumption, 4);
+    if (rv != SECSuccess)
+        goto loser;
+
+    /* No extensions. */
+    rv = ssl3_AppendHandshakeNumber(ss, 0, 2);
+    if (rv != SECSuccess)
+        goto loser;
+
+    /* Encode the ticket. */
+    rv = ssl3_AppendHandshakeVariable(
+        ss, ticket_data.data, ticket_data.len, 2);
+    if (rv != SECSuccess)
+        goto loser;
+
+    rv = SECSuccess;
+
+loser:
+    if (ticket_data.data) {
+        SECITEM_FreeItem(&ticket_data, PR_FALSE);
+    }
+    return rv;
+}
+
 static SECStatus
 tls13_HandleNewSessionTicket(sslSocket *ss, SSL3Opaque *b, PRUint32 length)
 {
     SECStatus rv;
     PRInt32 tmp;
+    PRUint32 flags;
     NewSessionTicket ticket;
     SECItem data;
 
@@ -2860,6 +2939,24 @@ tls13_HandleNewSessionTicket(sslSocket *ss, SSL3Opaque *b, PRUint32 length)
     }
     ticket.ticket_lifetime_hint = (PRUint32)tmp;
     ticket.ticket.type = siBuffer;
+
+    /* Flags. */
+    rv = ssl3_ConsumeHandshake(ss, &flags, 4, &b, &length);
+    if (rv != SECSuccess) {
+        FATAL_ERROR(ss, SSL_ERROR_RX_MALFORMED_NEW_SESSION_TICKET,
+                    decode_error);
+        return SECFailure;
+    }
+    flags = PR_ntohl(flags);
+
+    /* Parse and discard extensions. */
+    rv = ssl3_ConsumeHandshakeVariable(ss, &data, 2, &b, &length);
+    if (rv != SECSuccess) {
+        FATAL_ERROR(ss, SSL_ERROR_RX_MALFORMED_NEW_SESSION_TICKET,
+                    decode_error);
+        return SECFailure;
+    }
+
     rv = ssl3_ConsumeHandshakeVariable(ss, &data, 2, &b, &length);
     if (rv != SECSuccess || length != 0 || !data.len) {
         FATAL_ERROR(ss, SSL_ERROR_RX_MALFORMED_NEW_SESSION_TICKET,
@@ -2876,6 +2973,13 @@ tls13_HandleNewSessionTicket(sslSocket *ss, SSL3Opaque *b, PRUint32 length)
 
         /* Uncache so that we replace. */
         (*ss->sec.uncache)(ss->sec.ci.sid);
+
+        /* We only support DHE resumption so any ticket which doesn't
+         * support it we don't cache, but it can evict previous
+         * cache entries. */
+        if (!(flags & ticket_allow_dhe_resumption)) {
+            return SECSuccess;
+        }
 
         rv = SECITEM_CopyItem(NULL, &ticket.ticket, &data);
         if (rv != SECSuccess) {
