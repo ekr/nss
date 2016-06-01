@@ -103,6 +103,7 @@ class TlsAgent : public PollTarget {
   void ConfigureSessionCache(SessionResumptionMode mode);
   void SetSessionTicketsEnabled(bool en);
   void SetSessionCacheEnabled(bool en);
+  void Set0RttEnabled(bool en);
   void SetVersionRange(uint16_t minver, uint16_t maxver);
   void GetVersionRange(uint16_t* minver, uint16_t* maxver);
   void CheckPreliminaryInfo();
@@ -403,6 +404,11 @@ class TlsAgentTestClient : public TlsAgentTestBase,
 class TlsAgentStreamTestClient : public TlsAgentTestBase {
  public:
   TlsAgentStreamTestClient() : TlsAgentTestBase(TlsAgent::CLIENT, STREAM) {}
+};
+
+class TlsAgentStreamTestServer : public TlsAgentTestBase {
+ public:
+  TlsAgentStreamTestServer() : TlsAgentTestBase(TlsAgent::SERVER, STREAM) {}
 };
 
 class TlsAgentDgramTestClient : public TlsAgentTestBase {

@@ -43,6 +43,7 @@ uint8_t kBogusClientKeyExchange[] = {
   0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
   0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
 };
+const char *k0RttData = "ABCDEF";
 
 // When we see the ClientKeyExchange from |client|, increment the
 // ClientHelloVersion on |server|.
@@ -1093,6 +1094,64 @@ TEST_F(TlsConnectTest, DisableServerPSKAndFailToResume) {
   EXPECT_EQ(0U, serverCapture->extension().len());
 }
 
+class TlsZeroRttDataInjector : public TlsHandshakeFilter {
+ public:
+  TlsZeroRttDataInjector(TlsAgent *client) :
+      client_(client), done_(false) {}
+
+  virtual PacketFilter::Action FilterHandshake(
+      const HandshakeHeader& header,
+      const DataBuffer& input, DataBuffer* output) {
+    if (done_)
+      return KEEP;
+
+    PRInt32 rv = PR_Write(client_->ssl_fd(),
+                          k0RttData, strlen(k0RttData));
+    EXPECT_EQ(strlen(k0RttData), static_cast<size_t>(rv));
+
+    done_ = true;
+    return KEEP;
+  }
+
+ private:
+  TlsAgent *client_;
+  bool done_;
+};
+
+TEST_F(TlsConnectTest, TestTls13ZeroRtt) {
+  ConfigureSessionCache(RESUME_BOTH, RESUME_TICKET);
+  client_->SetVersionRange(SSL_LIBRARY_VERSION_TLS_1_1,
+                           SSL_LIBRARY_VERSION_TLS_1_3);
+  server_->SetVersionRange(SSL_LIBRARY_VERSION_TLS_1_1,
+                           SSL_LIBRARY_VERSION_TLS_1_3);
+  Connect();
+  SendReceive(); // Need to read so that we absorb the session ticket.
+  CheckKeys(ssl_kea_ecdh, ssl_auth_rsa_sign);
+
+  Reset();
+  client_->Set0RttEnabled(true);
+  server_->Set0RttEnabled(true);
+  server_->SetPacketFilter(new TlsZeroRttDataInjector(client_));
+  ConfigureSessionCache(RESUME_BOTH, RESUME_TICKET);
+  TlsExtensionCapture *c1 =
+      new TlsExtensionCapture(kTlsExtensionPreSharedKey);
+  client_->SetVersionRange(SSL_LIBRARY_VERSION_TLS_1_1,
+                           SSL_LIBRARY_VERSION_TLS_1_3);
+  server_->SetVersionRange(SSL_LIBRARY_VERSION_TLS_1_1,
+                           SSL_LIBRARY_VERSION_TLS_1_3);
+  ExpectResumption(RESUME_TICKET);
+  Connect();
+  char buf[1024];
+  PRInt32 rv = PR_Read(server_->ssl_fd(), buf, sizeof(buf));
+  EXPECT_EQ(strlen(k0RttData), static_cast<size_t>(rv));
+  EXPECT_EQ(0, memcmp(buf, k0RttData, rv));
+
+  SendReceive();
+  CheckKeys(ssl_kea_ecdh, ssl_auth_rsa_sign);
+  DataBuffer psk1(c1->extension());
+  ASSERT_GE(psk1.len(), 0UL);
+}
+
 TEST_P(TlsConnectDatagram, TestDtlsHolddownExpiry) {
   Connect();
   std::cerr << "Expiring holddown timer\n";
@@ -1100,7 +1159,8 @@ TEST_P(TlsConnectDatagram, TestDtlsHolddownExpiry) {
   SSLInt_ForceTimerExpiry(server_->ssl_fd());
   SendReceive();
   if (version_ >= SSL_LIBRARY_VERSION_TLS_1_3) {
-    EXPECT_EQ(1, SSLInt_CountTls13CipherSpecs(client_->ssl_fd()));
+    // One for send, one for receive.
+    EXPECT_EQ(2, SSLInt_CountTls13CipherSpecs(client_->ssl_fd()));
   }
 }
 
