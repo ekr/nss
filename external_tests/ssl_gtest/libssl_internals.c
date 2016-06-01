@@ -5,6 +5,7 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 /* This file contains functions for frobbing the internals of libssl */
+#include <stdio.h>
 #include "libssl_internals.h"
 
 #include "nss.h"
@@ -120,6 +121,8 @@ PRInt32 SSLInt_CountTls13CipherSpecs(PRFileDesc *fd)
   for (cur_p = PR_NEXT_LINK(&ss->ssl3.hs.cipherSpecs);
        cur_p != &ss->ssl3.hs.cipherSpecs;
        cur_p = PR_NEXT_LINK(cur_p)) {
+    ssl3CipherSpec *spec = (ssl3CipherSpec *)cur_p;
+    fprintf(stderr, "Cipher suite: %s refCt=%d\n", spec->phase, spec->refCt);
     ++ct;
   }
   return ct;

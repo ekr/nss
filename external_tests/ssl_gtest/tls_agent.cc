@@ -278,6 +278,14 @@ void TlsAgent::SetSessionCacheEnabled(bool en) {
   EXPECT_EQ(SECSuccess, rv);
 }
 
+void TlsAgent::Set0RttEnabled(bool en) {
+  EXPECT_TRUE(EnsureTlsSetup());
+
+  SECStatus rv = SSL_OptionSet(ssl_fd_, SSL_ENABLE_0RTT_DATA,
+                               en ? PR_TRUE : PR_FALSE);
+  EXPECT_EQ(SECSuccess, rv);
+}
+
 void TlsAgent::SetVersionRange(uint16_t minver, uint16_t maxver) {
    vrange_.min = minver;
    vrange_.max = maxver;
@@ -526,8 +534,9 @@ void TlsAgent::Connected() {
 
   if (expected_version_ >= SSL_LIBRARY_VERSION_TLS_1_3) {
     PRInt32 cipherSuites = SSLInt_CountTls13CipherSpecs(ssl_fd_);
-    EXPECT_EQ(((mode_ == DGRAM) && (role_ == CLIENT)) ? 2 : 1, cipherSuites);
+    EXPECT_EQ(((mode_ == DGRAM) && (role_ == CLIENT)) ? 3 : 2, cipherSuites);
   }
+
   SetState(STATE_CONNECTED);
 }
 

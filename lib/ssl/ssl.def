@@ -205,4 +205,10 @@ SSL_SetDowngradeCheckVersion;
 SSL_ConfigServerCert;
 ;+    local:
 ;+*;
+;+NSS_3.23 {    # NSS 3.25 release
+;+    global:
+SSL_Write0RttData;
+SSL_Read0RttData;
+;+    local:
+;+*;
 ;+};

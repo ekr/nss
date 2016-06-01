@@ -206,6 +206,7 @@ SSL_IMPORT PRFileDesc *DTLS_ImportFD(PRFileDesc *model, PRFileDesc *fd);
 /* Request Signed Certificate Timestamps via TLS extension (client) */
 #define SSL_ENABLE_SIGNED_CERT_TIMESTAMPS 31
 
+
 /* Ordinarily, when negotiating a TLS_DHE_* cipher suite the server picks the
  * group.  draft-ietf-tls-negotiated-ff-dhe changes this to use supported_groups
  * (formerly supported_curves) to signal which pre-defined groups are OK.
@@ -221,6 +222,9 @@ SSL_IMPORT PRFileDesc *DTLS_ImportFD(PRFileDesc *model, PRFileDesc *fd);
  * This option cannot be enabled if NSS is not compiled with ECC support.
  */
 #define SSL_REQUIRE_DH_NAMED_GROUPS 32
+
+/* Allow 0-RTT data (for TLS 1.3) */
+#define SSL_ENABLE_0RTT_DATA 33
 
 #ifdef SSL_DEPRECATED_FUNCTION
 /* Old deprecated function names */
@@ -1291,6 +1295,16 @@ extern const char *NSSSSL_GetVersion(void);
  */
 SSL_IMPORT SECStatus SSL_AuthCertificateComplete(PRFileDesc *fd,
                                                  PRErrorCode error);
+
+
+/* Write 0-RTT data for TLS 1.3. Experimental interface.*/
+SSL_IMPORT PRInt32 SSL_Write0RttData(PRFileDesc *fd,
+                                     const void *buf, PRInt32 len);
+
+/* Read 0-RTT applicationd data. You need to pass in a big enough buffer. */
+SSL_IMPORT PRInt32 SSL_Read0RttData(PRFileDesc *fd,
+                                    void *buf, PRInt32 len);
+
 SEC_END_PROTOS
 
 #endif /* __ssl_h_ */

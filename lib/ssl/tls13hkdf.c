@@ -42,6 +42,8 @@ tls13_HkdfExtract(PK11SymKey *ikm1, PK11SymKey *ikm2, SSLHashType baseHash,
     SECStatus rv;
     SECItem *salt;
     PK11SymKey *prk;
+    PRUint8 zeroKeyBuf[HASH_LENGTH_MAX] = {0}; /* Fills this with zeroes */
+    PK11SymKey *zeroKey = NULL;
 
     params.bExtract = CK_TRUE;
     params.bExpand = CK_FALSE;
@@ -77,11 +79,31 @@ tls13_HkdfExtract(PK11SymKey *ikm1, PK11SymKey *ikm2, SSLHashType baseHash,
     PORT_Assert(kTlsHkdfInfo[baseHash].pkcs11Mech);
     PORT_Assert(kTlsHkdfInfo[baseHash].hashSize);
     PORT_Assert(kTlsHkdfInfo[baseHash].hash == baseHash);
+
+    /* A zero ikm2 is a key of hash-length 0s. */
+    if (!ikm2) {
+        SECItem zeroItem = {
+            siBuffer,
+            zeroKeyBuf,
+            kTlsHkdfInfo[baseHash].hashSize
+        };
+        zeroKey = PK11_ImportSymKey(PK11_GetInternalSlot(),
+                                    kTlsHkdfInfo[baseHash].pkcs11Mech,
+                                    PK11_OriginUnwrap,
+                                    CKA_DERIVE, &zeroItem, NULL);
+        if (!zeroKey)
+            return SECFailure;
+        ikm2 = zeroKey;
+    }
+
     prk = PK11_Derive(ikm2, kTlsHkdfInfo[baseHash].pkcs11Mech,
                       &paramsi, kTlsHkdfInfo[baseHash].pkcs11Mech,
                       CKA_DERIVE, kTlsHkdfInfo[baseHash].hashSize);
+    if (zeroKey)
+        PK11_FreeSymKey(zeroKey);
     if (!prk)
         return SECFailure;
+
     PRINT_KEY(50, (NULL, "HKDF Extract", prk));
     *prkp = prk;
 
@@ -100,7 +122,7 @@ tls13_HkdfExpandLabel(PK11SymKey *prk, SSLHashType baseHash,
     /* Size of info array needs to be big enough to hold the maximum Prefix,
      * Label, plus HandshakeHash. If it's ever to small, the code will abort.
      */
-    PRUint8 info[110];
+    PRUint8 info[256];
     PRUint8 *ptr = info;
     unsigned int infoLen;
     PK11SymKey *derived;
@@ -108,7 +130,7 @@ tls13_HkdfExpandLabel(PK11SymKey *prk, SSLHashType baseHash,
     const unsigned int kLabelPrefixLen = strlen(kLabelPrefix);
 
     if (handshakeHash) {
-        PORT_Assert(handshakeHashLen == kTlsHkdfInfo[baseHash].hashSize);
+        PORT_Assert(handshakeHashLen == kTlsHkdfInfo[baseHash].hashSize * 2);
     } else {
         PORT_Assert(!handshakeHashLen);
     }
