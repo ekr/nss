@@ -398,7 +398,7 @@ SSL_GetNegotiatedHostInfo(PRFileDesc *fd)
             ss->ssl3.initialized) { /* TLS */
             SECItem *crsName;
             ssl_GetSpecReadLock(ss); /*********************************/
-            crsName = &ss->ssl3.cwSpec->srvVirtName;
+            crsName = &ss->ssl3.hs.srvVirtName;
             if (crsName->data) {
                 sniName = SECITEM_DupItem(crsName);
             }
