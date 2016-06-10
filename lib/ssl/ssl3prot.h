@@ -17,7 +17,7 @@ typedef PRUint16 SSL3ProtocolVersion;
 /* The TLS 1.3 draft version. Used to avoid negotiating
  * between incompatible pre-standard TLS 1.3 drafts.
  * TODO(ekr@rtfm.com): Remove when TLS 1.3 is published. */
-#define TLS_1_3_DRAFT_VERSION 12
+#define TLS_1_3_DRAFT_VERSION 13
 
 typedef PRUint16 ssl3CipherSuite;
 /* The cipher suites are defined in sslproto.h */
