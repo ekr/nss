@@ -188,6 +188,11 @@ typedef struct SSLChannelInfoStr {
      *  PR_FALSE in TLS 1.3.
      */
     PRBool extendedMasterSecretUsed;
+
+    /* The following fields were added in NSS 3.25.
+     * This field only has meaning in TLS >= 1.3.
+     */
+    PRBool earlyDataAccepted;
 } SSLChannelInfo;
 
 /* Preliminary channel info */

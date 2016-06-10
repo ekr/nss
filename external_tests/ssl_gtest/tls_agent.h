@@ -128,6 +128,7 @@ class TlsAgent : public PollTarget {
   void ResetSentBytes(); // Hack to test drops.
   void EnableExtendedMasterSecret();
   void CheckExtendedMasterSecret(bool expected);
+  void CheckEarlyDataAccepted(bool expected);
   void DisableRollbackDetection();
   void EnableCompression();
   void SetDowngradeCheckVersion(uint16_t version);

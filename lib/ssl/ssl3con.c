@@ -12564,11 +12564,13 @@ ssl3_HandleHandshakeMessage(sslSocket *ss, SSL3Opaque *b, PRUint32 length,
     } else {
         if (type == certificate_verify) {
             computeHashes =
-                    TLS13_IN_HS_STATE(ss, wait_cert_verify);
+                    TLS13_IN_HS_STATE(ss, wait_cert_verify,
+                                      wait_0rtt_trial_decrypt);
         } else if (type == finished) {
             computeHashes =
                     TLS13_IN_HS_STATE(ss, wait_cert_request, wait_finished,
-                                      wait_0rtt_finished);
+                                      wait_0rtt_finished,
+                                      wait_0rtt_trial_decrypt);
         }
     }
 
@@ -13422,17 +13424,17 @@ ssl3_HandleRecord(sslSocket *ss, SSL3Ciphertext *cText, sslBuffer *databuf)
 
         SSL_DBG(("%d: SSL3[%d]: decryption failed", SSL_GETPID(), ss->fd));
 
-        if (!IS_DTLS(ss)) {
+        if (IS_DTLS(ss) || TLS13_IN_HS_STATE(ss, wait_0rtt_trial_decrypt)) {
+            /* Silently drop the packet */
+            databuf->len = 0; /* Needed to ensure data not left around */
+            return SECSuccess;
+        } else {
             int errCode = PORT_GetError();
             SSL3_SendAlert(ss, alert_fatal, alert);
             /* Reset the error code in case SSL3_SendAlert called
              * PORT_SetError(). */
             PORT_SetError(errCode);
             return SECFailure;
-        } else {
-            /* Silently drop the packet */
-            databuf->len = 0; /* Needed to ensure data not left around */
-            return SECSuccess;
         }
     }
 

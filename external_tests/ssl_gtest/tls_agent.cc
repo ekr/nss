@@ -560,6 +560,14 @@ void TlsAgent::CheckExtendedMasterSecret(bool expected) {
       << "unexpected extended master secret state for " << name_;
 }
 
+void TlsAgent::CheckEarlyDataAccepted(bool expected) {
+  if (version() < SSL_LIBRARY_VERSION_TLS_1_3) {
+    expected = PR_FALSE;
+  }
+  ASSERT_EQ(expected, info_.earlyDataAccepted != PR_FALSE)
+      << "unexpected early data state for " << name_;
+}
+
 void TlsAgent::DisableRollbackDetection() {
   ASSERT_TRUE(EnsureTlsSetup());
 

@@ -1294,16 +1294,6 @@ extern const char *NSSSSL_GetVersion(void);
  */
 SSL_IMPORT SECStatus SSL_AuthCertificateComplete(PRFileDesc *fd,
                                                  PRErrorCode error);
-
-
-/* Write 0-RTT data for TLS 1.3. Experimental interface.*/
-SSL_IMPORT PRInt32 SSL_Write0RttData(PRFileDesc *fd,
-                                     const void *buf, PRInt32 len);
-
-/* Read 0-RTT applicationd data. You need to pass in a big enough buffer. */
-SSL_IMPORT PRInt32 SSL_Read0RttData(PRFileDesc *fd,
-                                    void *buf, PRInt32 len);
-
 SEC_END_PROTOS
 
 #endif /* __ssl_h_ */

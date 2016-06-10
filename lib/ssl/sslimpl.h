@@ -803,6 +803,7 @@ typedef enum {
     idle_handshake,
     wait_0rtt_finished,
     wait_0rtt_end_of_early_data,  /* Not processed by handshake code. */
+    wait_0rtt_trial_decrypt,      /* Wait for trial decryption to succeed. */
     wait_invalid /* Invalid value. There is no handshake message "invalid". */
 } SSL3WaitState;
 
@@ -1149,6 +1150,7 @@ typedef struct SessionTicketStr {
     ClientIdentity client_identity;
     SECItem peer_cert;
     PRUint32 timestamp;
+    PRUint32 flags;
     SECItem srvName; /* negotiated server name */
 } SessionTicket;
 
@@ -1886,7 +1888,7 @@ extern SECStatus ssl3_SessionTicketShutdown(void *appData, void *nssData);
 
 /* Tell clients to consider tickets valid for this long. */
 #define TLS_EX_SESS_TICKET_LIFETIME_HINT (2 * 24 * 60 * 60) /* 2 days */
-#define TLS_EX_SESS_TICKET_VERSION (0x0102)
+#define TLS_EX_SESS_TICKET_VERSION (0x0103)
 
 extern SECStatus ssl3_ValidateNextProtoNego(const unsigned char *data,
                                             unsigned int length);

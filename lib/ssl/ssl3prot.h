@@ -292,8 +292,15 @@ typedef struct {
 typedef struct {
     PRUint32 received_timestamp;
     PRUint32 ticket_lifetime_hint;
+    PRUint32 flags;
     SECItem ticket;
 } NewSessionTicket;
+
+typedef enum {
+    ticket_allow_early_data = 1,
+    ticket_allow_dhe_resumption = 2,
+    ticket_allow_psk_resumption = 4
+} TLS13SessionTicketFlags;
 
 typedef enum {
     CLIENT_AUTH_ANONYMOUS = 0,
