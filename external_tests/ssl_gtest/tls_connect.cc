@@ -113,7 +113,8 @@ TlsConnectTestBase::TlsConnectTestBase(Mode mode, uint16_t version)
         version_(version),
         expected_resumption_mode_(RESUME_NONE),
         session_ids_(),
-        expect_extended_master_secret_(false) {
+        expect_extended_master_secret_(false),
+        expect_early_data_accepted_(false) {
   std::string v;
   if (mode_ == DGRAM && version_ == SSL_LIBRARY_VERSION_TLS_1_1) {
     v = "1.0";
@@ -269,7 +270,8 @@ void TlsConnectTestBase::CheckConnected() {
   }
 
   CheckExtendedMasterSecret();
-
+  CheckEarlyDataAccepted();
+  
   CheckResumption(expected_resumption_mode_);
 }
 
@@ -400,6 +402,15 @@ void TlsConnectTestBase::ExpectExtendedMasterSecret(bool expected) {
 void TlsConnectTestBase::CheckExtendedMasterSecret() {
   client_->CheckExtendedMasterSecret(expect_extended_master_secret_);
   server_->CheckExtendedMasterSecret(expect_extended_master_secret_);
+}
+
+void TlsConnectTestBase::ExpectEarlyDataAccepted(bool expected) {
+  expect_early_data_accepted_ = expected;
+}
+
+void TlsConnectTestBase::CheckEarlyDataAccepted() {
+  client_->CheckEarlyDataAccepted(expect_early_data_accepted_);
+  server_->CheckEarlyDataAccepted(expect_early_data_accepted_);
 }
 
 TlsConnectGeneric::TlsConnectGeneric()

@@ -1196,6 +1196,11 @@ ssl3_EncodeSessionTicket(sslSocket *ss, SECItem *ticket_data)
     PORT_Assert(ss->opt.noLocks || ssl_HaveXmitBufLock(ss));
     PORT_Assert(ss->opt.noLocks || ssl_HaveSSL3HandshakeLock(ss));
 
+    ticket.flags = 0;
+    if ((ss->version >= SSL_LIBRARY_VERSION_TLS_1_3)
+        && (ss->opt.enable0RttData)) {
+        ticket.flags |= ticket_allow_early_data;
+    }
     ticket.ticket_lifetime_hint = TLS_EX_SESS_TICKET_LIFETIME_HINT;
     if (ss->opt.requestCertificate && ss->sec.ci.sid->peerCert) {
         cert_length = 3 + ss->sec.ci.sid->peerCert->derCert.len;
@@ -1269,7 +1274,8 @@ ssl3_EncodeSessionTicket(sslSocket *ss, SECItem *ticket_data)
         + 1                           /* server name type */
         + srvNameLen                  /* name len + length field */
         + 1                           /* extendedMasterSecretUsed */
-        + sizeof(ticket.ticket_lifetime_hint);
+        + sizeof(ticket.ticket_lifetime_hint)
+        + sizeof(ticket.flags);
     padding_length = AES_BLOCK_SIZE -
                      (ciphertext_length %
                       AES_BLOCK_SIZE);
@@ -1376,6 +1382,12 @@ ssl3_EncodeSessionTicket(sslSocket *ss, SECItem *ticket_data)
     now = ssl_Time();
     rv = ssl3_AppendNumberToItem(&plaintext, now,
                                  sizeof(ticket.ticket_lifetime_hint));
+    if (rv != SECSuccess)
+        goto loser;
+
+    /* Flags */
+    rv = ssl3_AppendNumberToItem(&plaintext, ticket.flags,
+                                 sizeof(ticket.flags));
     if (rv != SECSuccess)
         goto loser;
 
@@ -1913,6 +1925,12 @@ ssl3_ProcessSessionTicketCommon(sslSocket *ss, SECItem *data)
         goto no_ticket;
     parsed_session_ticket->timestamp = (PRUint32)temp;
 
+    rv = ssl3_ConsumeHandshake(ss, &parsed_session_ticket->flags, 4,
+                               &buffer, &buffer_len);
+    if (rv != SECSuccess)
+        goto no_ticket;
+    parsed_session_ticket->flags = PR_ntohl(parsed_session_ticket->flags);
+
     /* Read server name */
     nameType =
         ssl3_ConsumeHandshakeNumber(ss, 1, &buffer, &buffer_len);
@@ -1968,7 +1986,8 @@ ssl3_ProcessSessionTicketCommon(sslSocket *ss, SECItem *data)
         if (SECITEM_CopyItem(NULL, &sid->u.ssl3.locked.sessionTicket.ticket,
                              &extension_data) != SECSuccess)
             goto no_ticket;
-
+        sid->u.ssl3.locked.sessionTicket.flags = parsed_session_ticket->flags;
+        
 /* Copy master secret. */
 #ifndef NO_PKCS11_BYPASS
         if (ss->opt.bypassPKCS11 &&
@@ -3620,7 +3639,8 @@ tls13_ClientSendEarlyDataXtn(sslSocket *ss,
     if ((sid->version < SSL_LIBRARY_VERSION_TLS_1_3) ||
         (!ss->opt.enable0RttData) ||
         (!ss->xtnData.ticketTimestampVerified &&
-         !ssl3_ClientExtensionAdvertised(ss, ssl_tls13_pre_shared_key_xtn))) {
+         !ssl3_ClientExtensionAdvertised(ss, ssl_tls13_pre_shared_key_xtn)) ||
+        !(sid->u.ssl3.locked.sessionTicket.flags & ticket_allow_early_data)) {
         return 0;
     }
 
@@ -3665,8 +3685,7 @@ tls13_ServerHandleEarlyDataXtn(sslSocket *ss, PRUint16 ex_type,
                 SSL_GETPID(), ss->fd));
 
     /* If we are doing < TLS 1.3, then ignore this. */
-    if ((ss->version < SSL_LIBRARY_VERSION_TLS_1_3) ||
-        !ss->opt.enable0RttData) {
+    if (ss->version < SSL_LIBRARY_VERSION_TLS_1_3) {
         return SECSuccess;
     }
 

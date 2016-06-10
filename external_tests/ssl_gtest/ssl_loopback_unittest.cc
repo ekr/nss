@@ -1,3 +1,4 @@
+
 /* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
@@ -44,6 +45,7 @@ uint8_t kBogusClientKeyExchange[] = {
   0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
 };
 const char *k0RttData = "ABCDEF";
+const PRInt32 k0RttDataLen = static_cast<PRInt32>(strlen(k0RttData));
 
 // When we see the ClientKeyExchange from |client|, increment the
 // ClientHelloVersion on |server|.
@@ -233,7 +235,7 @@ TEST_P(TlsConnectGeneric, ConnectResumeClientBothTicketServerTicket) {
   SendReceive();
 }
 
-TEST_P(TlsConnectGenericPre13, ConnectResumeClientServerTicketOnly) {
+TEST_P(TlsConnectGeneric, ConnectResumeClientServerTicketOnly) {
   // This causes no resumption because the client needs the
   // session cache to resume even with tickets.
   ConfigureSessionCache(RESUME_TICKET, RESUME_TICKET);
@@ -247,7 +249,7 @@ TEST_P(TlsConnectGenericPre13, ConnectResumeClientServerTicketOnly) {
   SendReceive();
 }
 
-TEST_P(TlsConnectGenericPre13, ConnectResumeClientBothServerNone) {
+TEST_P(TlsConnectGeneric, ConnectResumeClientBothServerNone) {
   ConfigureSessionCache(RESUME_BOTH, RESUME_NONE);
   Connect();
   SendReceive();
@@ -259,7 +261,7 @@ TEST_P(TlsConnectGenericPre13, ConnectResumeClientBothServerNone) {
   SendReceive();
 }
 
-TEST_P(TlsConnectGenericPre13, ConnectResumeClientNoneServerBoth) {
+TEST_P(TlsConnectGeneric, ConnectResumeClientNoneServerBoth) {
   ConfigureSessionCache(RESUME_NONE, RESUME_BOTH);
   Connect();
   SendReceive();
@@ -1097,17 +1099,19 @@ TEST_F(TlsConnectTest, DisableServerPSKAndFailToResume) {
 class TlsZeroRttDataInjector : public TlsHandshakeFilter {
  public:
   TlsZeroRttDataInjector(TlsAgent *client) :
-      client_(client), done_(false) {}
+      client_(client), done_(false)
+  {}
 
   virtual PacketFilter::Action FilterHandshake(
       const HandshakeHeader& header,
       const DataBuffer& input, DataBuffer* output) {
+
     if (done_)
       return KEEP;
 
     PRInt32 rv = PR_Write(client_->ssl_fd(),
-                          k0RttData, strlen(k0RttData));
-    EXPECT_EQ(strlen(k0RttData), static_cast<size_t>(rv));
+                          k0RttData, k0RttDataLen);
+    EXPECT_EQ(k0RttDataLen, rv);
 
     done_ = true;
     return KEEP;
@@ -1118,20 +1122,68 @@ class TlsZeroRttDataInjector : public TlsHandshakeFilter {
   bool done_;
 };
 
-TEST_F(TlsConnectTest, TestTls13ZeroRtt) {
+// Read on the server after reading the |packet|th message from the client,
+// which is the end_of_early_data alert.
+class TlsZeroRttDataReader : public TlsRecordFilter {
+ public:
+  TlsZeroRttDataReader(TlsAgent *server, int packet, bool expect_success) :
+      server_(server), packet_(packet), expect_success_(expect_success),
+      ct_()
+  {}
+
+  virtual PacketFilter::Action FilterRecord(
+      const RecordHeader& header,
+      const DataBuffer& input,
+      DataBuffer* changed) {
+    if (++ct_ != packet_)
+      return KEEP;
+
+    // Do a first read. This should work if expect_success is set.
+    uint8_t buf[k0RttDataLen];
+    PRInt32 rv = PR_Read(server_->ssl_fd(),
+                         buf, k0RttDataLen);
+    if (expect_success_) {
+      std::cerr << "Read " << rv << " bytes\n";
+      EXPECT_EQ(k0RttDataLen, rv);
+    } else {
+      EXPECT_EQ(SECFailure, rv);
+      EXPECT_EQ(PR_WOULD_BLOCK_ERROR, PORT_GetError());
+    }
+
+    // Do a second read. this should fail.
+    rv = PR_Read(server_->ssl_fd(),
+                         buf, k0RttDataLen);
+    EXPECT_EQ(SECFailure, rv);
+    EXPECT_EQ(PR_WOULD_BLOCK_ERROR, PORT_GetError());
+
+    return KEEP;
+  }
+
+ private:
+  TlsAgent *server_;
+  int packet_;
+  bool expect_success_;
+  int ct_;
+};
+
+TEST_F(TlsConnectTest, TestTls13ZeroRttServerRejectByOption) {
   ConfigureSessionCache(RESUME_BOTH, RESUME_TICKET);
   client_->SetVersionRange(SSL_LIBRARY_VERSION_TLS_1_1,
                            SSL_LIBRARY_VERSION_TLS_1_3);
   server_->SetVersionRange(SSL_LIBRARY_VERSION_TLS_1_1,
                            SSL_LIBRARY_VERSION_TLS_1_3);
+  server_->Set0RttEnabled(true); // So we signal that we allow 0-RTT.
   Connect();
   SendReceive(); // Need to read so that we absorb the session ticket.
   CheckKeys(ssl_kea_ecdh, ssl_auth_rsa_sign);
 
   Reset();
   client_->Set0RttEnabled(true);
-  server_->Set0RttEnabled(true);
   server_->SetPacketFilter(new TlsZeroRttDataInjector(client_));
+  // Read on the server when the client sends the 4th packet
+  // (end_of_early_data).
+  client_->SetPacketFilter(new TlsZeroRttDataReader(
+      server_, 4, false));
   ConfigureSessionCache(RESUME_BOTH, RESUME_TICKET);
   TlsExtensionCapture *c1 =
       new TlsExtensionCapture(kTlsExtensionPreSharedKey);
@@ -1141,10 +1193,99 @@ TEST_F(TlsConnectTest, TestTls13ZeroRtt) {
                            SSL_LIBRARY_VERSION_TLS_1_3);
   ExpectResumption(RESUME_TICKET);
   Connect();
-  char buf[1024];
-  PRInt32 rv = PR_Read(server_->ssl_fd(), buf, sizeof(buf));
-  EXPECT_EQ(strlen(k0RttData), static_cast<size_t>(rv));
-  EXPECT_EQ(0, memcmp(buf, k0RttData, rv));
+
+  SendReceive();
+  CheckKeys(ssl_kea_ecdh, ssl_auth_rsa_sign);
+  DataBuffer psk1(c1->extension());
+  ASSERT_GE(psk1.len(), 0UL);
+}
+
+TEST_F(TlsConnectTest, TestTls13ZeroRttServerForgetTicket) {
+  ConfigureSessionCache(RESUME_BOTH, RESUME_TICKET);
+  client_->SetVersionRange(SSL_LIBRARY_VERSION_TLS_1_1,
+                           SSL_LIBRARY_VERSION_TLS_1_3);
+  server_->SetVersionRange(SSL_LIBRARY_VERSION_TLS_1_1,
+                           SSL_LIBRARY_VERSION_TLS_1_3);
+  server_->Set0RttEnabled(true); // So we signal that we allow 0-RTT.
+  Connect();
+  SendReceive(); // Need to read so that we absorb the session ticket.
+  CheckKeys(ssl_kea_ecdh, ssl_auth_rsa_sign);
+
+  Reset();
+  client_->Set0RttEnabled(true);
+  server_->Set0RttEnabled(true);
+  ClearServerCache();
+  ConfigureSessionCache(RESUME_BOTH, RESUME_TICKET);
+  server_->SetPacketFilter(new TlsZeroRttDataInjector(client_));
+  // Read on the server when the client sends the 4th packet
+  // (end_of_early_data).
+  client_->SetPacketFilter(new TlsZeroRttDataReader(
+      server_, 4, false));
+  ConfigureSessionCache(RESUME_BOTH, RESUME_TICKET);
+  TlsExtensionCapture *c1 =
+      new TlsExtensionCapture(kTlsExtensionPreSharedKey);
+  client_->SetVersionRange(SSL_LIBRARY_VERSION_TLS_1_1,
+                           SSL_LIBRARY_VERSION_TLS_1_3);
+  server_->SetVersionRange(SSL_LIBRARY_VERSION_TLS_1_1,
+                           SSL_LIBRARY_VERSION_TLS_1_3);
+  ExpectResumption(RESUME_NONE);
+  Connect();
+  SendReceive();
+  CheckKeys(ssl_kea_ecdh, ssl_auth_rsa_sign);
+  DataBuffer psk1(c1->extension());
+  ASSERT_GE(psk1.len(), 0UL);
+}
+
+TEST_F(TlsConnectTest, TestTls13ZeroRttServerOnly) {
+  server_->Set0RttEnabled(true);
+  // Read on the server when the client sends the 2nd
+  // packet (Finished).
+  client_->SetPacketFilter(new TlsZeroRttDataReader(
+      server_, 2, false));
+  ConfigureSessionCache(RESUME_BOTH, RESUME_TICKET);
+  TlsExtensionCapture *c1 =
+      new TlsExtensionCapture(kTlsExtensionPreSharedKey);
+  client_->SetVersionRange(SSL_LIBRARY_VERSION_TLS_1_1,
+                           SSL_LIBRARY_VERSION_TLS_1_3);
+  server_->SetVersionRange(SSL_LIBRARY_VERSION_TLS_1_1,
+                           SSL_LIBRARY_VERSION_TLS_1_3);
+  ExpectResumption(RESUME_NONE);
+  Connect();
+  SendReceive();
+  CheckKeys(ssl_kea_ecdh, ssl_auth_rsa_sign);
+  DataBuffer psk1(c1->extension());
+  ASSERT_GE(psk1.len(), 0UL);
+}
+
+TEST_F(TlsConnectTest, TestTls13ZeroRtt) {
+  ConfigureSessionCache(RESUME_BOTH, RESUME_TICKET);
+  client_->SetVersionRange(SSL_LIBRARY_VERSION_TLS_1_1,
+                           SSL_LIBRARY_VERSION_TLS_1_3);
+  server_->SetVersionRange(SSL_LIBRARY_VERSION_TLS_1_1,
+                           SSL_LIBRARY_VERSION_TLS_1_3);
+  server_->Set0RttEnabled(true); // So we signal that we allow 0-RTT.
+  Connect();
+  SendReceive(); // Need to read so that we absorb the session ticket.
+  CheckKeys(ssl_kea_ecdh, ssl_auth_rsa_sign);
+
+  Reset();
+  client_->Set0RttEnabled(true);
+  server_->Set0RttEnabled(true);
+  server_->SetPacketFilter(new TlsZeroRttDataInjector(client_));
+  // Read on the server when the client sends the 4th packet
+  // (end_of_early_data).
+  client_->SetPacketFilter(new TlsZeroRttDataReader(
+      server_, 4, true));
+  ConfigureSessionCache(RESUME_BOTH, RESUME_TICKET);
+  TlsExtensionCapture *c1 =
+      new TlsExtensionCapture(kTlsExtensionPreSharedKey);
+  client_->SetVersionRange(SSL_LIBRARY_VERSION_TLS_1_1,
+                           SSL_LIBRARY_VERSION_TLS_1_3);
+  server_->SetVersionRange(SSL_LIBRARY_VERSION_TLS_1_1,
+                           SSL_LIBRARY_VERSION_TLS_1_3);
+  ExpectResumption(RESUME_TICKET);
+  ExpectEarlyDataAccepted(true);
+  Connect();
 
   SendReceive();
   CheckKeys(ssl_kea_ecdh, ssl_auth_rsa_sign);

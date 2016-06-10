@@ -5,7 +5,6 @@
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-
 #include "stdarg.h"
 #include "cert.h"
 #include "ssl.h"
@@ -30,12 +29,6 @@ typedef enum {
     CipherSpecRead,
     CipherSpecWrite,
 } CipherSpecDirection;
-
-typedef enum {
-    ticket_allow_early_data = 1,
-    ticket_allow_dhe_resumption = 2,
-    ticket_allow_psk_resumption = 4
-} TLS13SessionTicketFlags;
 
 #define MAX_FINISHED_SIZE 64
 
@@ -164,6 +157,7 @@ tls13_HandshakeState(SSL3WaitState st)
         STATE_CASE(wait_encrypted_extensions);
         STATE_CASE(wait_0rtt_finished);
         STATE_CASE(wait_0rtt_end_of_early_data);
+        STATE_CASE(wait_0rtt_trial_decrypt);
         STATE_CASE(idle_handshake);
         default:
             break;
@@ -452,6 +446,14 @@ tls13_HandlePostHelloHandshakeMessage(sslSocket *ss, SSL3Opaque *b,
                                       PRUint32 length, SSL3Hashes *hashesPtr)
 {
     TLS13CombinedHash hashes;
+
+    if (TLS13_IN_HS_STATE(ss, wait_0rtt_trial_decrypt)) {
+        SSL_TRC(3, ("%d: TLS13[%d]: %s successfully decrypted handshake after"
+                    "failed 0-RTT",
+                    SSL_GETPID(), ss->fd));
+        TLS13_SET_HS_STATE(ss, ss->opt.requestCertificate ? wait_client_cert
+                           : wait_finished);
+    }
 
     /* TODO(ekr@rtfm.com): Would it be better to check all the states here? */
     switch (ss->ssl3.hs.msg_type) {
@@ -958,7 +960,9 @@ tls13_HandleClientHelloPart2(sslSocket *ss,
         ss->sec.ci.sid = sid;
 
         ss->ssl3.hs.doing0Rtt = ssl3_ExtensionNegotiated(
-            ss, ssl_tls13_early_data_xtn);
+            ss, ssl_tls13_early_data_xtn) &&
+                ss->opt.enable0RttData &&
+                (sid->u.ssl3.locked.sessionTicket.flags & ticket_allow_early_data);
     } else {
         if (sid) { /* we had a sid, but it's no longer valid, free it */
             SSL_AtomicIncrementLong(&ssl3stats->hch_sid_cache_not_ok);
@@ -1320,6 +1324,15 @@ tls13_SendServerHelloSequence(sslSocket *ss)
     PORT_Assert(ss->opt.noLocks || ssl_HaveSSL3HandshakeLock(ss));
     PORT_Assert(ss->opt.noLocks || ssl_HaveXmitBufLock(ss));
 
+    if (ss->ssl3.hs.doing0Rtt) {
+        /* TODO(ekr@rtfm.com): Send this in EncryptedExtensions. */
+        rv = ssl3_RegisterServerHelloExtensionSender(ss, ssl_tls13_early_data_xtn,
+                                                     tls13_ServerSendEarlyDataXtn);
+        if (rv != SECSuccess) {
+            return SECFailure; /* Error code set already. */
+        }
+    }
+
     rv = ssl3_SendServerHello(ss);
     if (rv != SECSuccess) {
         return rv; /* err code is set. */
@@ -1336,6 +1349,7 @@ tls13_SendServerHelloSequence(sslSocket *ss)
         FATAL_ERROR(ss, PORT_GetError(), internal_error);
         return SECFailure;
     }
+
 
     rv = tls13_SendEncryptedExtensions(ss);
     if (rv != SECSuccess) {
@@ -1404,9 +1418,14 @@ tls13_SendServerHelloSequence(sslSocket *ss)
             return SECFailure;
         }
 
-        TLS13_SET_HS_STATE(ss,
-                           ss->opt.requestCertificate ? wait_client_cert
-                           : wait_finished);
+        if (ssl3_ExtensionNegotiated(ss, ssl_tls13_early_data_xtn)) {
+            /* If for any reason we rejected 0-RTT, we need to trial decrypt. */
+            TLS13_SET_HS_STATE(ss, wait_0rtt_trial_decrypt);
+        } else {
+            TLS13_SET_HS_STATE(ss,
+                               ss->opt.requestCertificate ? wait_client_cert
+                               : wait_finished);
+        }
     }
 
     return SECSuccess;
@@ -2856,6 +2875,7 @@ tls13_SendNewSessionTicket(sslSocket *ss)
 {
     PRUint16 message_length;
     SECItem ticket_data = { 0, NULL, 0 };
+    PRUint32 flags = ticket_allow_dhe_resumption;
     SECStatus rv;
 
     rv = ssl3_EncodeSessionTicket(ss, &ticket_data);
@@ -2882,8 +2902,11 @@ tls13_SendNewSessionTicket(sslSocket *ss)
     /* Currently we only allow DHE resumption
      * TODO(ekr@rtfm.com): Update when we add PSK-resumption and 0-RTT.
      */
+    if (ss->opt.enable0RttData) {
+        flags |= ticket_allow_early_data;
+    }
     rv = ssl3_AppendHandshakeNumber(ss,
-                                    ticket_allow_dhe_resumption, 4);
+                                    flags, sizeof(flags));
     if (rv != SECSuccess)
         goto loser;
 
@@ -2947,7 +2970,7 @@ tls13_HandleNewSessionTicket(sslSocket *ss, SSL3Opaque *b, PRUint32 length)
                     decode_error);
         return SECFailure;
     }
-    flags = PR_ntohl(flags);
+    ticket.flags = PR_ntohl(flags);
 
     /* Parse and discard extensions. */
     rv = ssl3_ConsumeHandshakeVariable(ss, &data, 2, &b, &length);
@@ -2977,7 +3000,7 @@ tls13_HandleNewSessionTicket(sslSocket *ss, SSL3Opaque *b, PRUint32 length)
         /* We only support DHE resumption so any ticket which doesn't
          * support it we don't cache, but it can evict previous
          * cache entries. */
-        if (!(flags & ticket_allow_dhe_resumption)) {
+        if (!(ticket.flags & ticket_allow_dhe_resumption)) {
             return SECSuccess;
         }
 
@@ -3369,10 +3392,8 @@ tls13_Read0RttData(sslSocket *ss,
 {
     TLS13EarlyData *msg;
 
+    PORT_Assert(!PR_CLIST_IS_EMPTY(&ss->ssl3.hs.bufferedEarlyData));
     msg = (TLS13EarlyData *)PR_NEXT_LINK(&ss->ssl3.hs.bufferedEarlyData);
-    if (!msg) {
-        return 0;
-    }
 
     PR_REMOVE_LINK(&msg->link);
     if (msg->data.len > len) {
