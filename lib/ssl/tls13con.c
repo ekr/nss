@@ -1908,10 +1908,10 @@ tls13_DeriveTrafficKeys(sslSocket *ss, ssl3CipherSpec *spec,
 
     if ((direction == CipherSpecWrite) ^ (ss->sec.isServer)) {
         EXPAND_TRAFFIC_KEY(kHkdfPurposeClientWriteKey, client.write_key);
-        EXPAND_TRAFFIC_IV(kHkdfPurposeServerWriteIv, server.write_iv);
-    } else {
         EXPAND_TRAFFIC_IV(kHkdfPurposeClientWriteIv, client.write_iv);
+    } else {
         EXPAND_TRAFFIC_KEY(kHkdfPurposeServerWriteKey, server.write_key);
+        EXPAND_TRAFFIC_IV(kHkdfPurposeServerWriteIv, server.write_iv);
     }
 
     if (deleteSecret) {

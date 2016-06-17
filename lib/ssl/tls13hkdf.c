@@ -95,6 +95,8 @@ tls13_HkdfExtract(PK11SymKey *ikm1, PK11SymKey *ikm2, SSLHashType baseHash,
             return SECFailure;
         ikm2 = zeroKey;
     }
+    PRINT_BUF(50, (NULL, "HKDF Extract: IKM1/Salt", params.pSalt, params.ulSaltLen));
+    PRINT_KEY(50, (NULL, "HKDF Extract: IKM2", ikm2));
 
     prk = PK11_Derive(ikm2, kTlsHkdfInfo[baseHash].pkcs11Mech,
                       &paramsi, kTlsHkdfInfo[baseHash].pkcs11Mech,
