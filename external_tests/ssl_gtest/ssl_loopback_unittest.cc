@@ -1122,6 +1122,29 @@ class TlsZeroRttDataInjector : public TlsHandshakeFilter {
   bool done_;
 };
 
+class TlsZeroRttStateChecker : public TlsHandshakeFilter {
+ public:
+  TlsZeroRttStateChecker(TlsAgent *client) :
+      client_(client), done_(false) {}
+
+  virtual PacketFilter::Action FilterHandshake(
+      const HandshakeHeader& header,
+      const DataBuffer& input, DataBuffer* output) {
+    if (done_)
+      return KEEP;
+
+    std::cerr << "Checking ALPN\n";
+    client_->CheckAlpn(SSL_NEXT_PROTO_SELECTED, "a");
+
+    done_ = true;
+    return KEEP;
+  }
+
+ private:
+  TlsAgent *client_;
+  bool done_;
+};
+
 // Read on the server after reading the |packet|th message from the client,
 // which is the end_of_early_data alert.
 class TlsZeroRttDataReader : public TlsRecordFilter {
@@ -1292,6 +1315,112 @@ TEST_F(TlsConnectTest, TestTls13ZeroRtt) {
   DataBuffer psk1(c1->extension());
   ASSERT_GE(psk1.len(), 0UL);
 }
+
+TEST_F(TlsConnectTest, TestTls13ZeroRttAlpn) {
+  EnableAlpn();
+  ConfigureSessionCache(RESUME_BOTH, RESUME_TICKET);
+  client_->SetVersionRange(SSL_LIBRARY_VERSION_TLS_1_1,
+                           SSL_LIBRARY_VERSION_TLS_1_3);
+  server_->SetVersionRange(SSL_LIBRARY_VERSION_TLS_1_1,
+                           SSL_LIBRARY_VERSION_TLS_1_3);
+  server_->Set0RttEnabled(true); // So we signal that we allow 0-RTT.
+  Connect();
+  SendReceive(); // Need to read so that we absorb the session ticket.
+  CheckKeys(ssl_kea_ecdh, ssl_auth_rsa_sign);
+
+  Reset();
+  EnableAlpn();
+  client_->Set0RttEnabled(true);
+  server_->Set0RttEnabled(true);
+  std::vector<PacketFilter *> filters;
+  filters.push_back(new TlsZeroRttDataInjector(client_));
+  filters.push_back(new TlsZeroRttStateChecker(client_));
+  server_->SetPacketFilter(new ChainedPacketFilter(filters));
+  // Read on the server when the client sends the 4th packet
+  // (end_of_early_data).
+  client_->SetPacketFilter(new TlsZeroRttDataReader(
+      server_, 4, true));
+  ConfigureSessionCache(RESUME_BOTH, RESUME_TICKET);
+  TlsExtensionCapture *c1 =
+      new TlsExtensionCapture(kTlsExtensionPreSharedKey);
+  client_->SetVersionRange(SSL_LIBRARY_VERSION_TLS_1_1,
+                           SSL_LIBRARY_VERSION_TLS_1_3);
+  server_->SetVersionRange(SSL_LIBRARY_VERSION_TLS_1_1,
+                           SSL_LIBRARY_VERSION_TLS_1_3);
+  ExpectResumption(RESUME_TICKET);
+  ExpectEarlyDataAccepted(true);
+  Connect();
+
+  SendReceive();
+  CheckKeys(ssl_kea_ecdh, ssl_auth_rsa_sign);
+  DataBuffer psk1(c1->extension());
+  ASSERT_GE(psk1.len(), 0UL);
+}
+
+// Negotiate a different ALPN value. Currently, the client will
+// detect the change and abort, but in future the server should
+// refuse 0-RTT.
+TEST_F(TlsConnectTest, TestTls13ZeroRttAlpnChange) {
+  EnableAlpn();
+  ConfigureSessionCache(RESUME_BOTH, RESUME_TICKET);
+  client_->SetVersionRange(SSL_LIBRARY_VERSION_TLS_1_1,
+                           SSL_LIBRARY_VERSION_TLS_1_3);
+  server_->SetVersionRange(SSL_LIBRARY_VERSION_TLS_1_1,
+                           SSL_LIBRARY_VERSION_TLS_1_3);
+  server_->Set0RttEnabled(true); // So we signal that we allow 0-RTT.
+  Connect();
+  SendReceive(); // Need to read so that we absorb the session ticket.
+  CheckKeys(ssl_kea_ecdh, ssl_auth_rsa_sign);
+
+  Reset();
+  static const uint8_t alpn[] = { 0x01, 0x62};
+  EnableAlpn(alpn, sizeof(alpn));
+  client_->Set0RttEnabled(true);
+  server_->Set0RttEnabled(true);
+  std::vector<PacketFilter *> filters;
+  filters.push_back(new TlsZeroRttDataInjector(client_));
+  filters.push_back(new TlsZeroRttStateChecker(client_));
+  client_->SetVersionRange(SSL_LIBRARY_VERSION_TLS_1_1,
+                           SSL_LIBRARY_VERSION_TLS_1_3);
+  server_->SetVersionRange(SSL_LIBRARY_VERSION_TLS_1_1,
+                           SSL_LIBRARY_VERSION_TLS_1_3);
+  ExpectResumption(RESUME_TICKET);
+  ConnectExpectFail();
+  client_->CheckErrorCode(SSL_ERROR_NEXT_PROTOCOL_DATA_INVALID);
+  server_->CheckErrorCode(SSL_ERROR_DECODE_ERROR_ALERT);
+}
+
+// Negotiate a different ALPN value but with 0-RTT being
+// rejected. This should succeed.
+TEST_F(TlsConnectTest, TestTls13ZeroRttAlpnChangeRejected) {
+  EnableAlpn();
+  ConfigureSessionCache(RESUME_BOTH, RESUME_TICKET);
+  client_->SetVersionRange(SSL_LIBRARY_VERSION_TLS_1_1,
+                           SSL_LIBRARY_VERSION_TLS_1_3);
+  server_->SetVersionRange(SSL_LIBRARY_VERSION_TLS_1_1,
+                           SSL_LIBRARY_VERSION_TLS_1_3);
+  server_->Set0RttEnabled(true); // So we signal that we allow 0-RTT.
+  Connect();
+  SendReceive(); // Need to read so that we absorb the session ticket.
+  CheckKeys(ssl_kea_ecdh, ssl_auth_rsa_sign);
+
+  Reset();
+  static const uint8_t alpn[] = { 0x01, 0x62};
+  EnableAlpn(alpn, sizeof(alpn));
+  client_->Set0RttEnabled(true);
+  std::vector<PacketFilter *> filters;
+  filters.push_back(new TlsZeroRttDataInjector(client_));
+  filters.push_back(new TlsZeroRttStateChecker(client_));
+  client_->SetVersionRange(SSL_LIBRARY_VERSION_TLS_1_1,
+                           SSL_LIBRARY_VERSION_TLS_1_3);
+  server_->SetVersionRange(SSL_LIBRARY_VERSION_TLS_1_1,
+                           SSL_LIBRARY_VERSION_TLS_1_3);
+  ExpectResumption(RESUME_TICKET);
+  Connect();
+  SendReceive();
+  CheckKeys(ssl_kea_ecdh, ssl_auth_rsa_sign);
+}
+
 
 TEST_P(TlsConnectDatagram, TestDtlsHolddownExpiry) {
   Connect();

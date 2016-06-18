@@ -81,6 +81,7 @@ class TlsConnectTestBase : public ::testing::Test {
   void ConfigureSessionCache(SessionResumptionMode client,
                              SessionResumptionMode server);
   void EnableAlpn();
+  void EnableAlpn(const uint8_t* val, size_t len);
   void EnableSrtp();
   void CheckSrtp() const;
   void SendReceive();

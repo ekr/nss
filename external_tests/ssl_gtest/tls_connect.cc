@@ -371,6 +371,11 @@ void TlsConnectTestBase::EnableAlpn() {
   server_->EnableAlpn(val, sizeof(val));
 }
 
+void TlsConnectTestBase::EnableAlpn(const uint8_t *val, size_t len) {
+  client_->EnableAlpn(val, len);
+  server_->EnableAlpn(val, len);
+}
+
 void TlsConnectTestBase::EnableSrtp() {
   client_->EnableSrtp();
   server_->EnableSrtp();

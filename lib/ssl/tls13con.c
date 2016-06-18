@@ -2287,11 +2287,46 @@ tls13_HandleEncryptedExtensions(sslSocket *ss, SSL3Opaque *b, PRUint32 length)
     }
 
     if (!ss->sec.isServer) {
+        SECItem oldNpn = {siBuffer, NULL, 0};
+
+        /* If we are doing 0-RTT, then we already have an NPN value. Stash
+         * it for comparison. */
+        if (ss->ssl3.hs.doing0Rtt &&
+            ss->ssl3.nextProtoState == SSL_NEXT_PROTO_SELECTED) {
+            rv = SECITEM_CopyItem(NULL, &oldNpn, &ss->ssl3.nextProto);
+            if (rv != SECSuccess) {
+                return SECFailure; /* Error code already set */
+            }
+            ss->ssl3.nextProtoState = SSL_NEXT_PROTO_NO_SUPPORT;
+            SECITEM_FreeItem(&ss->ssl3.nextProto, PR_FALSE);
+        }
         rv = ssl3_HandleHelloExtensions(ss, &b, &length, encrypted_extensions);
         if (rv != SECSuccess) {
             return SECFailure; /* Error code set below */
         }
 
+        if (ss->ssl3.hs.doing0Rtt &&
+            ssl3_ExtensionNegotiated(ss, ssl_tls13_early_data_xtn)) {
+            /* Double-check that the server didn't do anything crazy with
+             * ALPN
+             *
+             * 1. If the session had ALPN, they negotiated it this time.
+             * 2. ALPN is the same.
+             */
+            if (oldNpn.len && !ssl3_ExtensionNegotiated(
+                    ss, ssl_app_layer_protocol_xtn)) {
+                SECITEM_FreeItem(&oldNpn, PR_FALSE);
+                FATAL_ERROR(ss, SSL_ERROR_MISSING_ALPN_EXTENSION,
+                            missing_extension);
+                return SECFailure;
+            }
+            if (SECITEM_CompareItem(&oldNpn, &ss->ssl3.nextProto)) {
+                SECITEM_FreeItem(&oldNpn, PR_FALSE);
+                FATAL_ERROR(ss, SSL_ERROR_NEXT_PROTOCOL_DATA_INVALID,
+                            decode_error);
+                return SECFailure;
+            }
+        }
         if (ss->ssl3.hs.kea_def->authKeyType == ssl_auth_psk) {
             TLS13_SET_HS_STATE(ss, wait_finished);
         } else {
@@ -3347,6 +3382,17 @@ tls13_MaybeDo0RTTHandshake(sslSocket *ss)
         return rv;
     ss->ssl3.hs.preliminaryInfo = 0; /* A bit of a hack to avoid signaling
                                       * preliminary info. */
+
+    /* Set the ALPN data as if it was negotiated. We check in the ServerHello
+     * handler that the server negotiates the same value. */
+    if (ss->sec.ci.sid->u.ssl3.npnSelection.len) {
+        ss->ssl3.nextProtoState = SSL_NEXT_PROTO_SELECTED;
+        rv = SECITEM_CopyItem(NULL, &ss->ssl3.nextProto,
+                              &ss->sec.ci.sid->u.ssl3.npnSelection);
+        if (rv != SECSuccess)
+            return rv;
+    }
+
     rv = tls13_ComputeEarlySecrets(ss, PR_TRUE);
     if (rv != SECSuccess) {
         FATAL_ERROR(ss, SEC_ERROR_LIBRARY_FAILURE, internal_error);

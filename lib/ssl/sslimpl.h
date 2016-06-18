@@ -1152,6 +1152,7 @@ typedef struct SessionTicketStr {
     PRUint32 timestamp;
     PRUint32 flags;
     SECItem srvName; /* negotiated server name */
+    SECItem npnSelection;
 } SessionTicket;
 
 /*
