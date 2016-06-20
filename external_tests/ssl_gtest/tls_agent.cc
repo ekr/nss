@@ -568,6 +568,10 @@ void TlsAgent::CheckEarlyDataAccepted(bool expected) {
       << "unexpected early data state for " << name_;
 }
 
+void TlsAgent::CheckSecretsDestroyed() {
+  ASSERT_EQ(true, SSLInt_CheckSecretsDestroyed(ssl_fd_));
+}
+
 void TlsAgent::DisableRollbackDetection() {
   ASSERT_TRUE(EnsureTlsSetup());
 

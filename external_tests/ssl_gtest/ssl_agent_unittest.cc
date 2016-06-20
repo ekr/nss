@@ -277,6 +277,8 @@ TEST_F(TlsAgentStreamTestClient, Set0RttOptionThenRead) {
                  SSL_ERROR_RX_UNEXPECTED_APPLICATION_DATA);
 }
 
+/* The server is allowing 0-RTT but the client doesn't offer it,
+ * so trial decryption isn't engaged. */
 TEST_F(TlsAgentStreamTestServer, Set0RttOptionClientHelloThenRead) {
   EnsureInit();
   agent_->SetVersionRange(SSL_LIBRARY_VERSION_TLS_1_1,

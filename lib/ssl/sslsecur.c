@@ -918,7 +918,12 @@ ssl_SecureSend(sslSocket *ss, const unsigned char *buf, int len, int flags)
 
     if (len > 0)
         ss->writerThread = PR_GetCurrentThread();
-    /* If any of these is non-zero, the initial handshake is not done. */
+
+    /* Check to see if we can write even though we're not finished.
+     *
+     * Case 1: False start
+     * Case 2: TLS 1.3 0-RTT
+     **/
     if (!ss->firstHsDone) {
         PRBool falseStart = PR_FALSE;
         ssl_Get1stHandshakeLock(ss);

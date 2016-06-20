@@ -132,6 +132,7 @@ class TlsAgent : public PollTarget {
   void DisableRollbackDetection();
   void EnableCompression();
   void SetDowngradeCheckVersion(uint16_t version);
+  void CheckSecretsDestroyed();
 
   const std::string& name() const { return name_; }
 

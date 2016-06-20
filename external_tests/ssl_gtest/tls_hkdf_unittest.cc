@@ -211,4 +211,6 @@ TEST_F(TlsHkdfTest, HkdfExpandLabelSha256) {
                   expected_data);
 }
 
+// TODO(ekr@rtfm.com): Tests for SHA-384 (bug 1281020)
+
 } // namespace nss_test

@@ -141,3 +141,25 @@ void SSLInt_ForceTimerExpiry(PRFileDesc *fd)
   ss->ssl3.hs.rtTimerStarted = PR_IntervalNow() -
       PR_MillisecondsToInterval(ss->ssl3.hs.rtTimeoutMs + 1);
 }
+
+#define CHECK_SECRET(secret)                    \
+  if (ss->ssl3.hs.secret) {                     \
+    fprintf(stderr, "%s != NULL\n", #secret);     \
+    return PR_FALSE;                            \
+  }
+
+PRBool SSLInt_CheckSecretsDestroyed(PRFileDesc *fd)
+{
+  sslSocket *ss = ssl_FindSocket(fd);
+  if (!ss) {
+    PR_FALSE;
+  }
+
+  CHECK_SECRET(currentSecret);
+  CHECK_SECRET(resumptionPsk);
+  CHECK_SECRET(dheSecret);
+  CHECK_SECRET(earlyTrafficSecret);
+  CHECK_SECRET(hsTrafficSecret);
+
+  return PR_TRUE;
+}

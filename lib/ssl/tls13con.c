@@ -744,6 +744,8 @@ tls13_ComputeHandshakeSecrets(sslSocket *ss)
         FATAL_ERROR(ss, SEC_ERROR_LIBRARY_FAILURE, internal_error);
         return rv;
     }
+    PK11_FreeSymKey(ss->ssl3.hs.dheSecret);
+    ss->ssl3.hs.dheSecret = NULL;
     PK11_FreeSymKey(ss->ssl3.hs.currentSecret);
     ss->ssl3.hs.currentSecret = newSecret;
 
@@ -770,7 +772,7 @@ tls13_ComputeHandshakeSecrets(sslSocket *ss)
     PK11_FreeSymKey(ss->ssl3.hs.currentSecret);
     ss->ssl3.hs.currentSecret = newSecret;
 
-    return rv;
+    return SECSuccess;
 }
 
 static SECStatus
@@ -959,10 +961,11 @@ tls13_HandleClientHelloPart2(sslSocket *ss,
             ss, ssl_tls13_pre_shared_key_xtn, tls13_ServerSendPreSharedKeyXtn);
         ss->sec.ci.sid = sid;
 
-        ss->ssl3.hs.doing0Rtt = ssl3_ExtensionNegotiated(
-            ss, ssl_tls13_early_data_xtn) &&
-                ss->opt.enable0RttData &&
-                (sid->u.ssl3.locked.sessionTicket.flags & ticket_allow_early_data);
+        ss->ssl3.hs.doing0Rtt = ss->opt.enable0RttData;
+        ss->ssl3.hs.doing0Rtt &=
+                ssl3_ExtensionNegotiated(ss, ssl_tls13_early_data_xtn);
+        ss->ssl3.hs.doing0Rtt &= !!(sid->u.ssl3.locked.sessionTicket.flags
+                                    & ticket_allow_early_data);
     } else {
         if (sid) { /* we had a sid, but it's no longer valid, free it */
             SSL_AtomicIncrementLong(&ssl3stats->hch_sid_cache_not_ok);
@@ -1325,7 +1328,8 @@ tls13_SendServerHelloSequence(sslSocket *ss)
     PORT_Assert(ss->opt.noLocks || ssl_HaveXmitBufLock(ss));
 
     if (ss->ssl3.hs.doing0Rtt) {
-        /* TODO(ekr@rtfm.com): Send this in EncryptedExtensions. */
+        /* TODO(ekr@rtfm.com): Send this in EncryptedExtensions. The spec is
+         * wrong in draft-13. */
         rv = ssl3_RegisterServerHelloExtensionSender(ss, ssl_tls13_early_data_xtn,
                                                      tls13_ServerSendEarlyDataXtn);
         if (rv != SECSuccess) {
@@ -1349,7 +1353,6 @@ tls13_SendServerHelloSequence(sslSocket *ss)
         FATAL_ERROR(ss, PORT_GetError(), internal_error);
         return SECFailure;
     }
-
 
     rv = tls13_SendEncryptedExtensions(ss);
     if (rv != SECSuccess) {
@@ -1419,7 +1422,12 @@ tls13_SendServerHelloSequence(sslSocket *ss)
         }
 
         if (ssl3_ExtensionNegotiated(ss, ssl_tls13_early_data_xtn)) {
-            /* If for any reason we rejected 0-RTT, we need to trial decrypt. */
+            /* If for any reason we rejected 0-RTT, we need to trial decrypt.
+             * Note: we use this API point because
+             * ssl3_ClientExtensionAdvertised() is only set on the server.
+             * This extension handler only fails to set the negotiated
+             * flag if the extension is malformed.
+             */
             TLS13_SET_HS_STATE(ss, wait_0rtt_trial_decrypt);
         } else {
             TLS13_SET_HS_STATE(ss,
@@ -1463,7 +1471,7 @@ tls13_HandleServerHelloPart2(sslSocket *ss)
                     FATAL_ERROR(ss, SEC_ERROR_LIBRARY_FAILURE, internal_error);
                     break;
                 }
-            } else{
+            } else {
                 PORT_Assert(ss->ssl3.hs.currentSecret);
             }
             cacheOK = PR_TRUE;
@@ -1522,8 +1530,7 @@ tls13_HandleServerHelloPart2(sslSocket *ss)
     }
 
     if (!ss->ssl3.hs.currentSecret) {
-        PORT_Assert(
-            !isPSK || !ss->ssl3.hs.doing0Rtt);
+        PORT_Assert(!isPSK || !ss->ssl3.hs.doing0Rtt);
 
         /* If we don't already have the Early Secret we need to make it
          * now. */
@@ -1571,8 +1578,6 @@ tls13_HandleServerHelloPart2(sslSocket *ss)
         FATAL_ERROR(ss, SSL_ERROR_INIT_CIPHER_SUITE_FAILURE, internal_error);
         return SECFailure;
     }
-    // TODO(ekr@rtfm.com): Remove hsTrafficSecret here?
-
     TLS13_SET_HS_STATE(ss, wait_encrypted_extensions);
 
     return SECSuccess;
@@ -2716,7 +2721,8 @@ tls13_HandleFinished(sslSocket *ss, SSL3Opaque *b, PRUint32 length,
             ssl_GetXmitBufLock(ss);
             if (ss->opt.enableSessionTickets &&
                 ss->ssl3.hs.kea_def->authKeyType != ssl_auth_psk) {
-                /* TODO(ekr@rtfm.com): Add support for new tickets in PSK. */
+                /* TODO(ekr@rtfm.com): Add support for new tickets in PSK
+                 * (bug 1281034).*/
                 rv = tls13_SendNewSessionTicket(ss);
                 if (rv != SECSuccess) {
                     ssl_ReleaseXmitBufLock(ss);

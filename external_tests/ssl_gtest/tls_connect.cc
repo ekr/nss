@@ -271,8 +271,9 @@ void TlsConnectTestBase::CheckConnected() {
 
   CheckExtendedMasterSecret();
   CheckEarlyDataAccepted();
-  
   CheckResumption(expected_resumption_mode_);
+  client_->CheckSecretsDestroyed();
+  server_->CheckSecretsDestroyed();
 }
 
 void TlsConnectTestBase::CheckKeys(SSLKEAType keaType,

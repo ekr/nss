@@ -8695,7 +8695,6 @@ ssl3_ServerCallSNICallback(sslSocket *ss)
 
                 ssl_GetSpecWriteLock(ss); /*******************************/
                 cwsName = &ss->ssl3.hs.srvVirtName;
-#ifndef SSL_SNI_ALLOW_NAME_CHANGE_2HS
                 /* not allow name change on the 2d HS */
                 if (ss->firstHsDone) {
                     if (ssl3_ServerNameCompare(pwsName, cwsName)) {
@@ -8706,7 +8705,6 @@ ssl3_ServerCallSNICallback(sslSocket *ss)
                         break;
                     }
                 }
-#endif
                 if (pwsName->data) {
                     SECITEM_FreeItem(pwsName, PR_FALSE);
                 }
@@ -8731,7 +8729,6 @@ ssl3_ServerCallSNICallback(sslSocket *ss)
                 /* get rid of the old name and save the newly picked. */
                 /* This code is protected by ssl3HandshakeLock. */
                 ssl_GetSpecWriteLock(ss); /*******************************/
-#ifndef SSL_SNI_ALLOW_NAME_CHANGE_2HS
                 /* not allow name change on the 2d HS */
                 if (ss->firstHsDone) {
                     SECItem *cwsName = &ss->ssl3.hs.srvVirtName;
@@ -8743,7 +8740,6 @@ ssl3_ServerCallSNICallback(sslSocket *ss)
                         break;
                     }
                 }
-#endif
                 pwsName = &ss->ssl3.hs.srvVirtName;
                 if (pwsName->data) {
                     SECITEM_FreeItem(pwsName, PR_FALSE);

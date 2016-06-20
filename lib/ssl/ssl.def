@@ -206,8 +206,3 @@ SSL_ConfigServerCert;
 ;+    local:
 ;+*;
 ;+};
-;+NSS_3.25 {    # NSS 3.25 release
-;+    global:
-;+    local:
-;+*;
-;+};

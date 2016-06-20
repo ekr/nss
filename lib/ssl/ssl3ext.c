@@ -1198,7 +1198,7 @@ ssl3_EncodeSessionTicket(sslSocket *ss, SECItem *ticket_data)
 
     ticket.flags = 0;
     if ((ss->version >= SSL_LIBRARY_VERSION_TLS_1_3)
-        && (ss->opt.enable0RttData)) {
+        && ss->opt.enable0RttData) {
         ticket.flags |= ticket_allow_early_data;
     }
     ticket.ticket_lifetime_hint = TLS_EX_SESS_TICKET_LIFETIME_HINT;
@@ -1987,8 +1987,8 @@ ssl3_ProcessSessionTicketCommon(sslSocket *ss, SECItem *data)
                              &extension_data) != SECSuccess)
             goto no_ticket;
         sid->u.ssl3.locked.sessionTicket.flags = parsed_session_ticket->flags;
-        
-/* Copy master secret. */
+
+        /* Copy master secret. */
 #ifndef NO_PKCS11_BYPASS
         if (ss->opt.bypassPKCS11 &&
             parsed_session_ticket->ms_is_wrapped)
@@ -3617,9 +3617,6 @@ tls13_ClientHandlePreSharedKeyXtn(sslSocket *ss, PRUint16 ex_type,
  *              struct {};
  *       }
  *   } EarlyDataIndication;
- *
- * This will probably change if/when we move to PSK-only
- * resumption.
  */
 static SECStatus
 tls13_ClientSendEarlyDataXtn(sslSocket *ss,
@@ -3633,16 +3630,23 @@ tls13_ClientSendEarlyDataXtn(sslSocket *ss,
     /* 0-RTT is only permitted if:
      *
      * 1. We are doing TLS 1.3
-     * 2. We have a valid ticket.
-     * 3. The 0-RTT option is set.
+     * 2. The 0-RTT option is set.
+     * 3. We have a valid ticket.
+     * 4. The server is willing to accept 0-RTT.
      */
-    if ((sid->version < SSL_LIBRARY_VERSION_TLS_1_3) ||
-        (!ss->opt.enable0RttData) ||
-        (!ss->xtnData.ticketTimestampVerified &&
-         !ssl3_ClientExtensionAdvertised(ss, ssl_tls13_pre_shared_key_xtn)) ||
-        !(sid->u.ssl3.locked.sessionTicket.flags & ticket_allow_early_data)) {
+    if (sid->version < SSL_LIBRARY_VERSION_TLS_1_3)
         return 0;
-    }
+
+    if (!ss->opt.enable0RttData)
+        return 0;
+
+    if (!ss->xtnData.ticketTimestampVerified &&
+        !ssl3_ClientExtensionAdvertised(ss, ssl_tls13_pre_shared_key_xtn))
+        return 0;
+
+    if (!(sid->u.ssl3.locked.sessionTicket.flags & ticket_allow_early_data))
+         return 0;
+
 
     /* type + length + empty context. */
     extension_length = 2 + 2 + 1;
@@ -3699,7 +3703,12 @@ tls13_ServerHandleEarlyDataXtn(sslSocket *ss, PRUint16 ex_type,
         return SECFailure;
     }
 
-    /* Keep track of negotiated extensions. */
+    /* Keep track of negotiated extensions.
+     * IMPORTANT: This must be set if the extension is present for
+     * 1.3, even if we later don't do 0-RTT. The only exception
+     * is if we return SECFailure causing the handshake to
+     * terminate.
+     **/
     ss->xtnData.negotiated[ss->xtnData.numNegotiated++] = ex_type;
 
     return SECSuccess;
@@ -3707,9 +3716,9 @@ tls13_ServerHandleEarlyDataXtn(sslSocket *ss, PRUint16 ex_type,
 
 /* This is only registered if we are sending it. */
 SECStatus
-tls13_ServerSendEarlyDataXtn(sslSocket * ss,
-                             PRBool      append,
-                             PRUint32    maxBytes)
+tls13_ServerSendEarlyDataXtn(sslSocket *ss,
+                             PRBool append,
+                             PRUint32 maxBytes)
 {
     SSL_TRC(3, ("%d: TLS13[%d]: send early_data extension",
                 SSL_GETPID(), ss->fd));
