@@ -405,7 +405,36 @@ void TlsConnectTestBase::SetupForZeroRtt() {
                            SSL_LIBRARY_VERSION_TLS_1_3);
   server_->SetVersionRange(SSL_LIBRARY_VERSION_TLS_1_1,
                            SSL_LIBRARY_VERSION_TLS_1_3);
-  client_->Set0RttEnabled(true);
+  server_->StartConnect();
+  client_->StartConnect();
+}
+
+void TlsConnectTestBase::ZeroRttSendReceive(bool expect_success) {
+  const char *k0RttData = "ABCDEF";
+  const PRInt32 k0RttDataLen = static_cast<PRInt32>(strlen(k0RttData));
+
+  client_->Handshake(); // Send ClientHello.
+  PRInt32 rv = PR_Write(client_->ssl_fd(),
+                        k0RttData, k0RttDataLen); // 0-RTT write.
+  EXPECT_EQ(k0RttDataLen, rv);
+
+  server_->Handshake(); // Consume ClientHello, EE, Finished.
+  uint8_t buf[k0RttDataLen];
+  rv = PR_Read(server_->ssl_fd(), buf, k0RttDataLen); // 0-RTT read
+  if (expect_success) {
+    std::cerr << "Read " << rv << " bytes\n";
+    EXPECT_EQ(k0RttDataLen, rv);
+  } else {
+    EXPECT_EQ(SECFailure, rv);
+    EXPECT_EQ(PR_WOULD_BLOCK_ERROR, PORT_GetError());
+  }
+
+  // Do a second read. this should fail.
+  rv = PR_Read(server_->ssl_fd(),
+               buf, k0RttDataLen);
+  EXPECT_EQ(SECFailure, rv);
+  EXPECT_EQ(PR_WOULD_BLOCK_ERROR, PORT_GetError());
+
 }
 
 void TlsConnectTestBase::Receive(size_t amount) {

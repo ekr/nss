@@ -85,6 +85,7 @@ class TlsConnectTestBase : public ::testing::Test {
   void CheckSrtp() const;
   void SendReceive();
   void SetupForZeroRtt();
+  void ZeroRttSendReceive(bool expect_success);
   void Receive(size_t amount);
   void ExpectExtendedMasterSecret(bool expected);
   void ExpectEarlyDataAccepted(bool expected);
