@@ -6078,12 +6078,12 @@ ssl3_SendClientHello(sslSocket *ss, PRBool resending)
     if (ss->version >= SSL_LIBRARY_VERSION_TLS_1_3) {
         rv = tls13_MaybeDo0RTTHandshake(ss);
         if (rv != SECSuccess) {
-            return rv; /* error code set by tls13_MaybeDo0RttHandshake */
+            return SECFailure; /* error code set already. */
         }
     }
 
     ss->ssl3.hs.ws = wait_server_hello;
-    return rv;
+    return SECSuccess;
 }
 
 /* Called from ssl3_HandlePostHelloHandshakeMessage() when it has deciphered a
@@ -8647,7 +8647,6 @@ ssl3_ServerCallSNICallback(sslSocket *ss)
 #error("No longer allowed to set SSL_SNI_ALLOW_NAME_CHANGE_2HS")
 #endif
     if (!ssl3_ExtensionNegotiated(ss, ssl_server_name_xtn)) {
-#ifndef SSL_SNI_ALLOW_NAME_CHANGE_2HS
         if (ss->firstHsDone) {
             /* Check that we don't have the name is current spec
              * if this extension was not negotiated on the 2d hs. */
@@ -8663,7 +8662,6 @@ ssl3_ServerCallSNICallback(sslSocket *ss)
                 goto alert_loser;
             }
         }
-#endif
         return SECSuccess;
     }
 
@@ -11089,8 +11087,7 @@ ssl3_SendNewSessionTicket(sslSocket *ss)
         goto loser;
 
     /* Encode the ticket. */
-    rv = ssl3_AppendHandshakeVariable(
-        ss, ticket.data, ticket.len, 2);
+    rv = ssl3_AppendHandshakeVariable(ss, ticket.data, ticket.len, 2);
     if (rv != SECSuccess)
         goto loser;
 

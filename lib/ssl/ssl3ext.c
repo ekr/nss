@@ -1988,7 +1988,7 @@ ssl3_ProcessSessionTicketCommon(sslSocket *ss, SECItem *data)
             goto no_ticket;
         sid->u.ssl3.locked.sessionTicket.flags = parsed_session_ticket->flags;
 
-        /* Copy master secret. */
+/* Copy master secret. */
 #ifndef NO_PKCS11_BYPASS
         if (ss->opt.bypassPKCS11 &&
             parsed_session_ticket->ms_is_wrapped)
@@ -3550,6 +3550,11 @@ tls13_ServerSendPreSharedKeyXtn(sslSocket *ss,
 
     PORT_Assert(session_ticket->len);
 
+    if (maxBytes < (PRUint32)extension_length) {
+        PORT_Assert(0);
+        return 0;
+    }
+
     if (append) {
         rv = ssl3_AppendHandshakeNumber(ss, ssl_tls13_pre_shared_key_xtn, 2);
         if (rv != SECSuccess)
@@ -3644,7 +3649,8 @@ tls13_ClientSendEarlyDataXtn(sslSocket *ss,
         !ssl3_ClientExtensionAdvertised(ss, ssl_tls13_pre_shared_key_xtn))
         return 0;
 
-    if (!(sid->u.ssl3.locked.sessionTicket.flags & ticket_allow_early_data))
+    if ((sid->u.ssl3.locked.sessionTicket.flags & ticket_allow_early_data)
+        == 0)
          return 0;
 
 
@@ -3704,11 +3710,10 @@ tls13_ServerHandleEarlyDataXtn(sslSocket *ss, PRUint16 ex_type,
     }
 
     /* Keep track of negotiated extensions.
-     * IMPORTANT: This must be set if the extension is present for
-     * 1.3, even if we later don't do 0-RTT. The only exception
-     * is if we return SECFailure causing the handshake to
-     * terminate.
-     **/
+     * IMPORTANT: Record the presence of the extension only. This is
+     * only one of several things that the 0-RTT processing code uses
+     * in determining whether to accept 0-RTT.
+     */
     ss->xtnData.negotiated[ss->xtnData.numNegotiated++] = ex_type;
 
     return SECSuccess;
@@ -3722,6 +3727,11 @@ tls13_ServerSendEarlyDataXtn(sslSocket *ss,
 {
     SSL_TRC(3, ("%d: TLS13[%d]: send early_data extension",
                 SSL_GETPID(), ss->fd));
+
+    if (maxBytes < 4) {
+        PORT_Assert(0);
+        return 0;
+    }
 
     if (append) {
         SECStatus rv;

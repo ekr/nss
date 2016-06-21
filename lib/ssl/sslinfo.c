@@ -79,17 +79,14 @@ SSL_GetChannelInfo(PRFileDesc *fd, SSLChannelInfo *info, PRUintn len)
                  sid->u.ssl3.keys.extendedMasterSecretUsed)
                     ? PR_TRUE
                     : PR_FALSE;
-            if (ss->version < SSL_LIBRARY_VERSION_TLS_1_3) {
-                inf.earlyDataAccepted = PR_FALSE;
-            } else {
-                if (ss->sec.isServer) {
-                    inf.earlyDataAccepted = ss->ssl3.hs.doing0Rtt;
-                }
-                else {
-                    inf.earlyDataAccepted =
-                            ssl3_ExtensionNegotiated(
-                                ss, ssl_tls13_early_data_xtn);
-                }
+
+            if (ss->sec.isServer) {
+                inf.earlyDataAccepted = ss->ssl3.hs.doing0Rtt;
+            }
+            else {
+                inf.earlyDataAccepted =
+                        ssl3_ExtensionNegotiated(
+                            ss, ssl_tls13_early_data_xtn);
             }
             sidLen = sid->u.ssl3.sessionIDLength;
             sidLen = PR_MIN(sidLen, sizeof inf.sessionID);

@@ -816,8 +816,8 @@ tls13_ComputeFinalSecrets(sslSocket *ss)
      * |crSpec->master_secret| and |cwSpec->master_secret|.
      */
     ss->ssl3.crSpec->master_secret = resumptionMasterSecret;
-    ss->ssl3.cwSpec->master_secret = PK11_ReferenceSymKey
-            (ss->ssl3.crSpec->master_secret);
+    ss->ssl3.cwSpec->master_secret =
+            PK11_ReferenceSymKey(ss->ssl3.crSpec->master_secret);
 
     return SECSuccess;
 }
@@ -964,8 +964,10 @@ tls13_HandleClientHelloPart2(sslSocket *ss,
         ss->ssl3.hs.doing0Rtt = ss->opt.enable0RttData;
         ss->ssl3.hs.doing0Rtt &=
                 ssl3_ExtensionNegotiated(ss, ssl_tls13_early_data_xtn);
-        ss->ssl3.hs.doing0Rtt &= !!(sid->u.ssl3.locked.sessionTicket.flags
-                                    & ticket_allow_early_data);
+        if ((sid->u.ssl3.locked.sessionTicket.flags & ticket_allow_early_data)
+            == 0 ) {
+            ss->ssl3.hs.doing0Rtt = PR_FALSE;
+        }
     } else {
         if (sid) { /* we had a sid, but it's no longer valid, free it */
             SSL_AtomicIncrementLong(&ssl3stats->hch_sid_cache_not_ok);
@@ -1329,7 +1331,7 @@ tls13_SendServerHelloSequence(sslSocket *ss)
 
     if (ss->ssl3.hs.doing0Rtt) {
         /* TODO(ekr@rtfm.com): Send this in EncryptedExtensions. The spec is
-         * wrong in draft-13. */
+         * wrong in draft-13. Bug 1281249. */
         rv = ssl3_RegisterServerHelloExtensionSender(ss, ssl_tls13_early_data_xtn,
                                                      tls13_ServerSendEarlyDataXtn);
         if (rv != SECSuccess) {
@@ -2303,7 +2305,7 @@ tls13_HandleEncryptedExtensions(sslSocket *ss, SSL3Opaque *b, PRUint32 length)
             TLS13_SET_HS_STATE(ss, wait_cert_request);
         }
     } else {
-        // TODO(ekr@rtfm.com): Actually process this rather than ignoring it.
+        /* TODO(ekr@rtfm.com): Actually process this rather than ignoring it. */
         TLS13_SET_HS_STATE(ss, wait_0rtt_finished);
     }
 
@@ -2318,7 +2320,7 @@ tls13_SendEncryptedExtensions(sslSocket *ss)
     PRInt32 sent_len = 0;
     PRUint32 maxBytes = 65535;
 
-    // TODO(ekr@rtfm.com): Implement the ticket_age xtn.
+    /* TODO(ekr@rtfm.com): Implement the ticket_age xtn. */
     SSL_TRC(3, ("%d: TLS13[%d]: send encrypted extensions handshake",
                 SSL_GETPID(), ss->fd));
 
@@ -2361,7 +2363,7 @@ tls13_SendCertificateVerify(sslSocket *ss, SECKEYPrivateKey *privKey)
     unsigned int len;
     SSLSignatureAndHashAlg sigAndHash;
     TLS13CombinedHash hash;
-    SSL3Hashes tbsHash;
+    SSL3Hashes tbsHash;  /* The hash "to be signed". */
 
     PORT_Assert(ss->opt.noLocks || ssl_HaveXmitBufLock(ss));
     PORT_Assert(ss->opt.noLocks || ssl_HaveSSL3HandshakeLock(ss));
@@ -2485,7 +2487,7 @@ tls13_HandleCertificateVerify(sslSocket *ss, SSL3Opaque *b, PRUint32 length,
     }
 
     /* We only support CertificateVerify messages that use the handshake
-     * hash. TODO(ekr@rtfm.com): We can fix this. */
+     * hash. TODO(ekr@rtfm.com): bug 1179338. */
     if (sigAndHash.hashAlg != tls13_GetHash(ss)) {
         FATAL_ERROR(ss, SSL_ERROR_UNSUPPORTED_HASH_ALGORITHM, decrypt_error);
         return SECFailure;
@@ -2911,8 +2913,7 @@ tls13_SendNewSessionTicket(sslSocket *ss)
     if (ss->opt.enable0RttData) {
         flags |= ticket_allow_early_data;
     }
-    rv = ssl3_AppendHandshakeNumber(ss,
-                                    flags, sizeof(flags));
+    rv = ssl3_AppendHandshakeNumber(ss, flags, sizeof(flags));
     if (rv != SECSuccess)
         goto loser;
 
@@ -3053,34 +3054,20 @@ static const struct {
                             in TLS 1.3. */
         /* ExtensionSendEncrypted */
     },
-    { ssl_supported_groups_xtn,
-      ExtensionSendEncrypted },
-    { ssl_ec_point_formats_xtn,
-      ExtensionNotUsed },
-    { ssl_signature_algorithms_xtn,
-      ExtensionClientOnly },
-    { ssl_use_srtp_xtn,
-      ExtensionSendEncrypted },
-    { ssl_app_layer_protocol_xtn,
-      ExtensionSendEncrypted },
-    { ssl_padding_xtn,
-      ExtensionNotUsed },
-    { ssl_extended_master_secret_xtn,
-      ExtensionNotUsed },
-    { ssl_session_ticket_xtn,
-      ExtensionClientOnly },
-    { ssl_tls13_key_share_xtn,
-      ExtensionSendClear },
-    { ssl_tls13_pre_shared_key_xtn,
-      ExtensionSendClear },
-    { ssl_tls13_early_data_xtn,
-      ExtensionSendEncrypted },
-    { ssl_next_proto_nego_xtn,
-      ExtensionNotUsed },
-    { ssl_renegotiation_info_xtn,
-      ExtensionNotUsed },
-    { ssl_tls13_draft_version_xtn,
-      ExtensionClientOnly }
+    { ssl_supported_groups_xtn, ExtensionSendEncrypted },
+    { ssl_ec_point_formats_xtn, ExtensionNotUsed },
+    { ssl_signature_algorithms_xtn, ExtensionClientOnly },
+    { ssl_use_srtp_xtn, ExtensionSendEncrypted },
+    { ssl_app_layer_protocol_xtn, ExtensionSendEncrypted },
+    { ssl_padding_xtn, ExtensionNotUsed },
+    { ssl_extended_master_secret_xtn, ExtensionNotUsed },
+    { ssl_session_ticket_xtn, ExtensionClientOnly },
+    { ssl_tls13_key_share_xtn, ExtensionSendClear },
+    { ssl_tls13_pre_shared_key_xtn, ExtensionSendClear },
+    { ssl_tls13_early_data_xtn, ExtensionSendClear },
+    { ssl_next_proto_nego_xtn, ExtensionNotUsed },
+    { ssl_renegotiation_info_xtn, ExtensionNotUsed },
+    { ssl_tls13_draft_version_xtn, ExtensionClientOnly }
 };
 
 PRBool
@@ -3351,8 +3338,8 @@ tls13_MaybeDo0RTTHandshake(sslSocket *ss)
     rv = ssl3_SetCipherSuite(ss, ss->sec.ci.sid->u.ssl3.cipherSuite, PR_FALSE);
     if (rv != SECSuccess)
         return rv;
-    ss->ssl3.hs.preliminaryInfo = 0; /* A bit of a hack to avoid signaling
-                                      * preliminary info. */
+    rv =  ss->ssl3.hs.preliminaryInfo = 0; /* TODO(ekr@rtfm.com) Fill this in.
+                                            * bug 1281255. */
     rv = tls13_ComputeEarlySecrets(ss, PR_TRUE);
     if (rv != SECSuccess) {
         FATAL_ERROR(ss, SEC_ERROR_LIBRARY_FAILURE, internal_error);
@@ -3393,8 +3380,7 @@ tls13_MaybeDo0RTTHandshake(sslSocket *ss)
 }
 
 PRInt32
-tls13_Read0RttData(sslSocket *ss,
-                   void *buf, PRInt32 len)
+tls13_Read0RttData(sslSocket *ss, void *buf, PRInt32 len)
 {
     TLS13EarlyData *msg;
 

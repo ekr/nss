@@ -190,7 +190,8 @@ typedef struct SSLChannelInfoStr {
     PRBool extendedMasterSecretUsed;
 
     /* The following fields were added in NSS 3.25.
-     * This field only has meaning in TLS >= 1.3.
+     * This field only has meaning in TLS >= 1.3, and indicates on the
+     * client side that the server accepted early (0-RTT) data.
      */
     PRBool earlyDataAccepted;
 } SSLChannelInfo;

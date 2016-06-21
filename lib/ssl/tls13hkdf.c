@@ -34,7 +34,7 @@ static const struct {
 };
 
 SECStatus
-tls13_HkdfExtract(PK11SymKey *ikm1, PK11SymKey *ikm2, SSLHashType baseHash,
+tls13_HkdfExtract(PK11SymKey *ikm1, PK11SymKey *ikm2in, SSLHashType baseHash,
                   PK11SymKey **prkp)
 {
     CK_NSS_HKDFParams params;
@@ -44,6 +44,7 @@ tls13_HkdfExtract(PK11SymKey *ikm1, PK11SymKey *ikm2, SSLHashType baseHash,
     PK11SymKey *prk;
     static const PRUint8 zeroKeyBuf[HASH_LENGTH_MAX];
     PK11SymKey *zeroKey = NULL;
+    PK11SymKey *ikm2;
 
     params.bExtract = CK_TRUE;
     params.bExpand = CK_FALSE;
@@ -81,7 +82,7 @@ tls13_HkdfExtract(PK11SymKey *ikm1, PK11SymKey *ikm2, SSLHashType baseHash,
     PORT_Assert(kTlsHkdfInfo[baseHash].hash == baseHash);
 
     /* A zero ikm2 is a key of hash-length 0s. */
-    if (!ikm2) {
+    if (!ikm2in) {
         SECItem zeroItem = {
             siBuffer,
             (unsigned char *)zeroKeyBuf,
@@ -94,7 +95,11 @@ tls13_HkdfExtract(PK11SymKey *ikm1, PK11SymKey *ikm2, SSLHashType baseHash,
         if (!zeroKey)
             return SECFailure;
         ikm2 = zeroKey;
+    } else {
+        ikm2 = ikm2in;
     }
+    PORT_Assert(ikm2);
+    
     PRINT_BUF(50, (NULL, "HKDF Extract: IKM1/Salt", params.pSalt, params.ulSaltLen));
     PRINT_KEY(50, (NULL, "HKDF Extract: IKM2", ikm2));
 

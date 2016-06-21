@@ -19,6 +19,7 @@
 namespace nss_test {
 
 #ifdef NSS_ENABLE_TLS_1_3
+// This is a 1-RTT ClientHello with ECDHE and DHE.
 const static uint8_t kCannedTls13ClientHello[] = {
   0x01, 0x00, 0x01, 0xfc, 0x03, 0x04, 0x77, 0x5c,
   0x3a, 0xd8, 0x3f, 0x43, 0x63, 0x98, 0xfa, 0x68,
@@ -277,8 +278,9 @@ TEST_F(TlsAgentStreamTestClient, Set0RttOptionThenRead) {
                  SSL_ERROR_RX_UNEXPECTED_APPLICATION_DATA);
 }
 
-/* The server is allowing 0-RTT but the client doesn't offer it,
- * so trial decryption isn't engaged. */
+// The server is allowing 0-RTT but the client doesn't offer it,
+// so trial decryption isn't engaged and 0-RTT messages cause
+// an error.
 TEST_F(TlsAgentStreamTestServer, Set0RttOptionClientHelloThenRead) {
   EnsureInit();
   agent_->SetVersionRange(SSL_LIBRARY_VERSION_TLS_1_1,

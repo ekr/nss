@@ -376,7 +376,7 @@ tls13_ImportECDHKeyShare(sslSocket *ss, SECKEYPublicKey *peerKey,
                          const namedGroupDef *ecGroup)
 {
     SECStatus rv;
-    SECItem ecPoint = {siBuffer, NULL, 0};
+    SECItem ecPoint = { siBuffer, NULL, 0 };
 
     PORT_Assert(ss->opt.noLocks || ssl_HaveRecvBufLock(ss));
     PORT_Assert(ss->opt.noLocks || ssl_HaveSSL3HandshakeLock(ss));
