@@ -1166,37 +1166,11 @@ class TlsZeroRttDataReader : public TlsRecordFilter {
 };
 
 TEST_F(TlsConnectTest, TestTls13ZeroRttServerRejectByOption) {
-  ConfigureSessionCache(RESUME_BOTH, RESUME_TICKET);
-  client_->SetVersionRange(SSL_LIBRARY_VERSION_TLS_1_1,
-                           SSL_LIBRARY_VERSION_TLS_1_3);
-  server_->SetVersionRange(SSL_LIBRARY_VERSION_TLS_1_1,
-                           SSL_LIBRARY_VERSION_TLS_1_3);
-  server_->Set0RttEnabled(true); // So we signal that we allow 0-RTT.
-  Connect();
-  SendReceive(); // Need to read so that we absorb the session ticket.
-  CheckKeys(ssl_kea_ecdh, ssl_auth_rsa_sign);
-
-  Reset();
+  SetupForZeroRtt();
   client_->Set0RttEnabled(true);
-  server_->SetPacketFilter(new TlsZeroRttDataInjector(client_));
-  // Read on the server when the client sends the 4th packet
-  // (end_of_early_data).
-  client_->SetPacketFilter(new TlsZeroRttDataReader(
-      server_, 4, false));
-  ConfigureSessionCache(RESUME_BOTH, RESUME_TICKET);
-  TlsExtensionCapture *c1 =
-      new TlsExtensionCapture(kTlsExtensionPreSharedKey);
-  client_->SetVersionRange(SSL_LIBRARY_VERSION_TLS_1_1,
-                           SSL_LIBRARY_VERSION_TLS_1_3);
-  server_->SetVersionRange(SSL_LIBRARY_VERSION_TLS_1_1,
-                           SSL_LIBRARY_VERSION_TLS_1_3);
   ExpectResumption(RESUME_TICKET);
   Connect();
-
   SendReceive();
-  CheckKeys(ssl_kea_ecdh, ssl_auth_rsa_sign);
-  DataBuffer psk1(c1->extension());
-  ASSERT_GE(psk1.len(), 0UL);
 }
 
 TEST_F(TlsConnectTest, TestTls13ZeroRttServerForgetTicket) {

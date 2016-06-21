@@ -388,13 +388,32 @@ void TlsConnectTestBase::SendReceive() {
   Receive(50);
 }
 
+// Do a first connection so we can do 0-RTT on the second one.
+void TlsConnectTestBase::SetupForZeroRtt() {
+  ConfigureSessionCache(RESUME_BOTH, RESUME_TICKET);
+  client_->SetVersionRange(SSL_LIBRARY_VERSION_TLS_1_1,
+                           SSL_LIBRARY_VERSION_TLS_1_3);
+  server_->SetVersionRange(SSL_LIBRARY_VERSION_TLS_1_1,
+                           SSL_LIBRARY_VERSION_TLS_1_3);
+  server_->Set0RttEnabled(true); // So we signal that we allow 0-RTT.
+  Connect();
+  SendReceive(); // Need to read so that we absorb the session ticket.
+  CheckKeys(ssl_kea_ecdh, ssl_auth_rsa_sign);
+
+  Reset();
+  client_->SetVersionRange(SSL_LIBRARY_VERSION_TLS_1_1,
+                           SSL_LIBRARY_VERSION_TLS_1_3);
+  server_->SetVersionRange(SSL_LIBRARY_VERSION_TLS_1_1,
+                           SSL_LIBRARY_VERSION_TLS_1_3);
+  client_->Set0RttEnabled(true);
+}
+
 void TlsConnectTestBase::Receive(size_t amount) {
   WAIT_(client_->received_bytes() == amount &&
         server_->received_bytes() == amount, 2000);
   ASSERT_EQ(amount, client_->received_bytes());
   ASSERT_EQ(amount, server_->received_bytes());
 }
-
 
 void TlsConnectTestBase::ExpectExtendedMasterSecret(bool expected) {
   expect_extended_master_secret_ = expected;
