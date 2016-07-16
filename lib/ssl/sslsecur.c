@@ -869,6 +869,13 @@ ssl_SecureRecv(sslSocket *ss, unsigned char *buf, int len, int flags)
     if (len == 0)
         return 0;
 
+    /* This is a hack to pick up any 0-RTT data that came in through the
+     * handshake. */
+    if (!PR_CLIST_IS_EMPTY(&ss->ssl3.hs.bufferedEarlyData)) {
+        PORT_Assert(ss->version >= SSL_LIBRARY_VERSION_TLS_1_3);
+        return tls13_Read0RttData(ss, buf, len);
+    }
+
     rv = DoRecv(ss, (unsigned char *)buf, len, flags);
     SSL_TRC(2, ("%d: SSL[%d]: recving %d bytes securely (errno=%d)",
                 SSL_GETPID(), ss->fd, rv, PORT_GetError()));
