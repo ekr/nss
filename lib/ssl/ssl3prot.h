@@ -304,6 +304,16 @@ typedef enum {
 } TLS13SessionTicketFlags;
 
 typedef enum {
+    tls13_psk_ke = 0,
+    tls13_psk_dh_ke = 1
+} TLS13PskKEModes;
+
+typedef enum {
+    tls13_psk_auth = 0,
+    tls13_psk_sign_auth = 1
+} TLS13PskAuthModes;
+
+typedef enum {
     CLIENT_AUTH_ANONYMOUS = 0,
     CLIENT_AUTH_CERTIFICATE = 1
 } ClientAuthenticationType;

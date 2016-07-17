@@ -3431,16 +3431,21 @@ loser:
 
 /* Called by clients.
  *
- *   opaque psk_identity<0..2^16-1>;
- *
  *   struct {
- *        select (Role) {
- *            case client:
- *                psk_identity identities<2..2^16-1>;
+ *     PskAuthMode auth_modes<1..255>;
+ *     PskKeyExchangeMode ke_modes<1..255>;
+ *     opaque identity<0..2^16-1>;
+ *  } PskIdentity;
  *
+ *  struct {
+ *       select (Role) {
+ *           case client:
+ *               PskIdentity identities<2..2^16-1>;
  *            case server:
- *                 uint16 selected_identity;
- *        }
+ *               PskAuthMode auth_mode;
+ *               PskKeMode ke_mode;
+ *               uint16 selected_identity;
+ *       }
  *   } PreSharedKeyExtension;
  *
  * Presently the only way to get a PSK is by resumption, so this is
@@ -3454,6 +3459,10 @@ tls13_ClientSendPreSharedKeyXtn(sslSocket *ss,
     PRInt32 extension_length;
     NewSessionTicket *session_ticket = NULL;
     sslSessionID *sid = ss->sec.ci.sid;
+    PRUint8 auth_modes[] = { tls13_psk_auth };
+    unsigned long auth_modes_len = sizeof(auth_modes);
+    PRUint8 ke_modes[] = { tls13_psk_dh_ke };
+    unsigned long ke_modes_len = sizeof(ke_modes);
 
     if (sid->cached == never_cached ||
         sid->version < SSL_LIBRARY_VERSION_TLS_1_3) {
@@ -3488,9 +3497,11 @@ tls13_ClientSendPreSharedKeyXtn(sslSocket *ss,
         return 0;
     }
 
-    /* Type + length + vector length + identity length + ticket. */
-    extension_length = 2 + 2 + 2 + 2 +
-                       session_ticket->ticket.len;
+    extension_length =
+            2 + 2 + 2 + /* Type + length + vector length */
+            1 + ke_modes_len + /* key exchange modes vector */
+            1 + auth_modes_len + /* auth modes vector */
+            2 + session_ticket->ticket.len; /* identity length + ticket len */
 
     if (maxBytes < (PRUint32)extension_length) {
         PORT_Assert(0);
@@ -3506,7 +3517,13 @@ tls13_ClientSendPreSharedKeyXtn(sslSocket *ss,
         rv = ssl3_AppendHandshakeNumber(ss, extension_length - 4, 2);
         if (rv != SECSuccess)
             goto loser;
-        rv = ssl3_AppendHandshakeNumber(ss, session_ticket->ticket.len + 2, 2);
+        rv = ssl3_AppendHandshakeNumber(ss, extension_length - 6, 2);
+        if (rv != SECSuccess)
+            goto loser;
+        rv = ssl3_AppendHandshakeVariable(ss, auth_modes, auth_modes_len, 1);
+        if (rv != SECSuccess)
+            goto loser;
+        rv = ssl3_AppendHandshakeVariable(ss, ke_modes, ke_modes_len, 1);
         if (rv != SECSuccess)
             goto loser;
         rv = ssl3_AppendHandshakeVariable(ss, session_ticket->ticket.data,
@@ -3535,7 +3552,6 @@ static SECStatus
 tls13_ServerHandlePreSharedKeyXtn(sslSocket *ss, PRUint16 ex_type,
                                   SECItem *data)
 {
-    SECItem label;
     PRInt32 len;
     PRBool first = PR_TRUE;
     SECStatus rv;
@@ -3558,6 +3574,18 @@ tls13_ServerHandlePreSharedKeyXtn(sslSocket *ss, PRUint16 ex_type,
     }
 
     while (data->len) {
+        SECItem label;
+        SECItem auth_modes;
+        SECItem ke_modes;
+
+        rv = ssl3_ConsumeHandshakeVariable(ss, &auth_modes, 1,
+                                           &data->data, &data->len);
+        if (rv != SECSuccess)
+            return rv;
+        rv = ssl3_ConsumeHandshakeVariable(ss, &ke_modes, 1,
+                                           &data->data, &data->len);
+        if (rv != SECSuccess)
+            return rv;
         rv = ssl3_ConsumeHandshakeVariable(ss, &label, 2,
                                            &data->data, &data->len);
         if (rv != SECSuccess)
@@ -3569,7 +3597,6 @@ tls13_ServerHandlePreSharedKeyXtn(sslSocket *ss, PRUint16 ex_type,
 
             PRINT_BUF(50, (ss, "Handling PreSharedKey value",
                            label.data, label.len));
-
             rv = ssl3_ProcessSessionTicketCommon(ss, &label);
             /* This only happens if we have an internal error, not
              * a malformed ticket. Bogus tickets just don't resume
