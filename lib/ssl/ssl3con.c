@@ -195,6 +195,11 @@ static ssl3CipherSuiteCfg cipherSuites[ssl_V3_SUITES_IMPLEMENTED] = {
  { TLS_RSA_WITH_NULL_SHA,                   SSL_ALLOWED, PR_FALSE, PR_FALSE},
  { TLS_RSA_WITH_NULL_SHA256,                SSL_ALLOWED, PR_FALSE, PR_FALSE},
  { TLS_RSA_WITH_NULL_MD5,                   SSL_ALLOWED, PR_FALSE, PR_FALSE},
+
+ /* Special TLS 1.3 AEAD-only suites. */
+ { TLS13_STAR_WITH_AES_128_GCM_SHA256, SSL_ALLOWED, PR_TRUE, PR_FALSE },
+ { TLS13_STAR_WITH_CHACHA20_POLY1305_SHA256, SSL_ALLOWED, PR_TRUE, PR_FALSE },
+ { TLS13_STAR_WITH_AES_256_GCM_SHA384, SSL_ALLOWED, PR_TRUE, PR_FALSE },
 };
 /* clang-format on */
 
@@ -492,6 +497,11 @@ static const ssl3CipherSuiteDef cipher_suite_defs[] =
     {TLS_DHE_PSK_WITH_AES_128_GCM_SHA256, cipher_aes_128_gcm, mac_aead, kea_dhe_psk, ssl_hash_sha256},
     {TLS_DHE_PSK_WITH_CHACHA20_POLY1305_SHA256, cipher_chacha20, mac_aead, kea_dhe_psk, ssl_hash_sha256},
     {TLS_DHE_PSK_WITH_AES_256_GCM_SHA384, cipher_aes_256_gcm, mac_aead, kea_dhe_psk, ssl_hash_sha384},
+
+    {TLS13_STAR_WITH_AES_128_GCM_SHA256, cipher_aes_128_gcm, mac_aead, kea_ecdhe_ecdsa, ssl_hash_sha256},
+    {TLS13_STAR_WITH_CHACHA20_POLY1305_SHA256, cipher_chacha20, mac_aead, kea_ecdhe_ecdsa, ssl_hash_sha256},
+    {TLS13_STAR_WITH_AES_256_GCM_SHA384, cipher_aes_256_gcm, mac_aead, kea_ecdhe_ecdsa, ssl_hash_sha384},
+
 };
 /* clang-format on */
 
@@ -780,9 +790,13 @@ ssl3_CipherSuiteAllowedForVersionRange(
         case TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256:
         case TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256:
         case TLS_DHE_RSA_WITH_CHACHA20_POLY1305_SHA256:
+#if 0
             return vrange->max >= SSL_LIBRARY_VERSION_TLS_1_2;
+#else
+            return vrange->max == SSL_LIBRARY_VERSION_TLS_1_2;
+#endif
 
-        /* RFC 4492: ECC cipher suites need TLS extensions to negotiate curves and
+            /* RFC 4492: ECC cipher suites need TLS extensions to negotiate curves and
          * point formats.*/
         case TLS_ECDH_ECDSA_WITH_NULL_SHA:
         case TLS_ECDH_ECDSA_WITH_RC4_128_SHA:
@@ -807,13 +821,19 @@ ssl3_CipherSuiteAllowedForVersionRange(
             return vrange->max >= SSL_LIBRARY_VERSION_TLS_1_0 &&
                    vrange->min < SSL_LIBRARY_VERSION_TLS_1_3;
 
+#if 0
         case TLS_ECDHE_PSK_WITH_AES_128_GCM_SHA256:
         case TLS_ECDHE_PSK_WITH_CHACHA20_POLY1305_SHA256:
         case TLS_ECDHE_PSK_WITH_AES_256_GCM_SHA384:
         case TLS_DHE_PSK_WITH_AES_128_GCM_SHA256:
         case TLS_DHE_PSK_WITH_CHACHA20_POLY1305_SHA256:
         case TLS_DHE_PSK_WITH_AES_256_GCM_SHA384:
-            return vrange->max >= SSL_LIBRARY_VERSION_TLS_1_3;
+              return vrange->max >= SSL_LIBRARY_VERSION_TLS_1_3;
+#endif
+        case TLS13_STAR_WITH_AES_128_GCM_SHA256:
+        case TLS13_STAR_WITH_AES_256_GCM_SHA384:
+        case TLS13_STAR_WITH_CHACHA20_POLY1305_SHA256:
+              return vrange->max >= SSL_LIBRARY_VERSION_TLS_1_3;
 
         default:
             return vrange->min < SSL_LIBRARY_VERSION_TLS_1_3;

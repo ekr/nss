@@ -49,6 +49,7 @@ static SECStatus tls13_ChaCha20Poly1305(
     const unsigned char *additionalData, int additionalDataLen);
 static SECStatus tls13_SendEncryptedExtensions(sslSocket *ss);
 static PRBool tls13_ServerAllow0Rtt(sslSocket *ss, const sslSessionID *sid);
+static SECStatus tls13_HandleClientKeyShare(sslSocket *ss, NamedGroup group);
 static SECStatus tls13_HandleEncryptedExtensions(sslSocket *ss, SSL3Opaque *b,
                                                  PRUint32 length);
 static SECStatus tls13_HandleCertificate(
@@ -918,6 +919,7 @@ tls13_CanResume(sslSocket *ss, const sslSessionID *sid)
         return PR_FALSE;
     }
 
+    // TODO(ekr@rtfm.com): Force the same cert if we sign and resume. */
     /* Server sids don't remember the server cert we previously sent, but they
      * do remember the type of certificate we originally used, so we can locate
      * it again, provided that the current ssl socket has had its server certs
@@ -983,6 +985,73 @@ tls13_NegotiateKeyExchange(sslSocket *ss, NamedGroup *group)
     return SECFailure;
 }
 
+/* ssl3_PickSignatureHashAlgorithm selects a hash algorithm to use when signing
+ * elements of the handshake. (The negotiated cipher suite determines the
+ * signature algorithm.) Prior to TLS 1.2, the MD5/SHA1 combination is always
+ * used. With TLS 1.2, a client may advertise its support for signature and
+ * hash combinations. */
+SECStatus
+tls13_PickSignatureHashAlgorithm(sslSocket *ss,
+                                 SSLSignatureAndHashAlg *out)
+{
+    PRUint32 policy;
+    unsigned int i, j;
+
+    out->sigAlg = ss->ssl3.hs.kea_def->signKeyType;
+
+    if (ss->version <= SSL_LIBRARY_VERSION_TLS_1_1) {
+        /* SEC_OID_UNKNOWN means the MD5/SHA1 combo hash used in TLS 1.1 and
+         * prior. */
+        out->hashAlg = ssl_hash_none;
+        return SECSuccess;
+    }
+
+    if (ss->ssl3.hs.numClientSigAndHash == 0) {
+        /* If the client didn't provide any signature_algorithms extension then
+         * we can assume that they support SHA-1:
+         * https://tools.ietf.org/html/rfc5246#section-7.4.1.4.1 */
+        out->hashAlg = ssl_hash_sha1;
+        return SECSuccess;
+    }
+
+    /* Here we look for the first server preference that the client has
+     * indicated support for in their signature_algorithms extension. */
+    for (i = 0; i < ss->ssl3.signatureAlgorithmCount; ++i) {
+        const SSLSignatureAndHashAlg *serverPref =
+            &ss->ssl3.signatureAlgorithms[i];
+        SECOidTag hashOID;
+        if (serverPref->sigAlg != out->sigAlg) {
+            continue;
+        }
+        hashOID = ssl3_TLSHashAlgorithmToOID(serverPref->hashAlg);
+        if ((NSS_GetAlgorithmPolicy(hashOID, &policy) == SECSuccess) &&
+            !(policy & NSS_USE_ALG_IN_SSL_KX)) {
+            /* we ignore hashes we don't support */
+            continue;
+        }
+        for (j = 0; j < ss->ssl3.hs.numClientSigAndHash; j++) {
+            const SSLSignatureAndHashAlg *clientPref =
+                &ss->ssl3.hs.clientSigAndHash[j];
+            if (clientPref->hashAlg == serverPref->hashAlg &&
+                clientPref->sigAlg == out->sigAlg) {
+                out->hashAlg = serverPref->hashAlg;
+                return SECSuccess;
+            }
+        }
+    }
+
+    PORT_SetError(SSL_ERROR_UNSUPPORTED_HASH_ALGORITHM);
+    return SECFailure;
+}
+
+static SECStatus
+tls13_SelectSigningCert(sslSocket *ss,
+                        SECItem *algorithms)
+{
+
+
+}
+
 static SECStatus
 tls13_NegotiateAuthentication(sslSocket *ss,
                               SSLSignatureAndHashAlg *sigAndHash)
@@ -1004,13 +1073,6 @@ tls13_NegotiateAuthentication(sslSocket *ss,
                         SSL_GETPID(), ss->fd));
             ss->statelessResume = PR_FALSE;
         }
-    }
-
-    /* At this point we are either signing or failing. */
-    /* Select the cert. */
-    rv = ssl3_SelectServerCert(ss);
-    if (rv != SECSuccess) {
-        return SECFailure; /* An alert was sent already. */
     }
 
     /* Now select the signature algorithm. */
@@ -1035,29 +1097,35 @@ tls13_HandleClientHelloPart2(sslSocket *ss,
 {
     SECStatus rv;
     SSL3Statistics *ssl3stats = SSL_GetStatistics();
-    int j;
+    SSLSignatureAndHashAlg sigAndHash;
+    NamedGroup expectedGroup;
 
-    if (sid != NULL && !tls13_CanResume(ss, sid)) {
-        /* Destroy SID if it is present an unusable. */
-        SSL_AtomicIncrementLong(&ssl3stats->hch_sid_cache_not_ok);
-        if (ss->sec.uncache)
-            ss->sec.uncache(sid);
-        ssl_FreeSID(sid);
-        sid = NULL;
-        ss->statelessResume = PR_FALSE;
+    /* Check if we could in principle resume. */
+    if (ss->statelessResume) {
+        PORT_Assert(sid);
+        if (!sid) {
+            FATAL_ERROR(ss, SEC_ERROR_LIBRARY_FAILURE, internal_error);
+            return SECFailure;
+        }
+        if (!tls13_CanResume(ss, sid)) {
+            ss->statelessResume = PR_FALSE;
+        }
     }
 
-#ifndef PARANOID
-    /* Look for a matching cipher suite. */
-    j = ssl3_config_match_init(ss);
-    if (j <= 0) { /* no ciphers are working/supported by PK11 */
-        FATAL_ERROR(ss, PORT_GetError(), internal_error);
+    /* Select key exchange. */
+    rv = tls13_NegotiateKeyExchange(ss, &expectedGroup);
+    if (rv != SECSuccess) {
         return SECFailure;
     }
-#endif
+
+    /* Select the authentication (this is also handshake shape). */
+    rv = tls13_NegotiateAuthentication(ss, &sigAndHash);
+    if (rv != SECSuccess) {
+        return SECFailure;
+    }
 
     if (ss->statelessResume) {
-        /* The client sent a valid session ticket. */
+        /* We are now committed to trying to resume. */
         PORT_Assert(sid);
 
         rv = tls13_RecoverWrappedSharedSecret(ss, sid);
@@ -1124,18 +1192,9 @@ tls13_HandleClientHelloPart2(sslSocket *ss,
     /* If this is TLS 1.3 we are expecting a ClientKeyShare
      * extension. Missing/absent extension cause failure
      * below. */
-    rv = tls13_HandleClientKeyShare(ss);
+    rv = tls13_HandleClientKeyShare(ss, expectedGroup);
     if (rv != SECSuccess) {
         return SECFailure; /* An alert was sent already. */
-    }
-
-    if (!sid) {
-        sid = ssl3_NewSessionID(ss, PR_TRUE);
-        if (sid == NULL) {
-            FATAL_ERROR(ss, PORT_GetError(), internal_error);
-            return SECFailure;
-        }
-        ss->sec.ci.sid = sid;
     }
 
     if (ss->ssl3.hs.doing0Rtt) {
@@ -1170,8 +1229,8 @@ tls13_HandleClientHelloPart2(sslSocket *ss,
  *
  * Caller must hold Handshake and RecvBuf locks.
  */
-SECStatus
-tls13_HandleClientKeyShare(sslSocket *ss)
+static SECStatus
+tls13_HandleClientKeyShare(sslSocket *ss, NamedGroup group)
 {
     const namedGroupDef *expectedGroup;
     SECStatus rv;
@@ -1186,37 +1245,8 @@ tls13_HandleClientKeyShare(sslSocket *ss)
     PORT_Assert(ss->opt.noLocks || ssl_HaveRecvBufLock(ss));
     PORT_Assert(ss->opt.noLocks || ssl_HaveSSL3HandshakeLock(ss));
 
-    /* Figure out what group we expect */
-    switch (ss->ssl3.hs.kea_def->exchKeyType) {
-        case ssl_kea_ecdh:
-        case ssl_kea_ecdh_psk:
-            expectedGroup = ssl_GetECGroupForServerSocket(ss);
-            if (!expectedGroup) {
-                FATAL_ERROR(ss, SSL_ERROR_NO_CYPHER_OVERLAP,
-                            handshake_failure);
-                return SECFailure;
-            }
-            break;
-
-        case ssl_kea_dh:
-        case ssl_kea_dh_psk:
-            rv = ssl_SelectDHEParams(ss, &expectedGroup, &dheParams);
-            if (rv != SECSuccess) {
-                FATAL_ERROR(ss, SSL_ERROR_NO_CYPHER_OVERLAP,
-                            handshake_failure);
-                return SECFailure;
-            }
-            PORT_Assert(expectedGroup);
-            PORT_Assert(dheParams);
-            break;
-
-        default:
-            /* Got an unknown or unsupported Key Exchange Algorithm.
-             * Can't happen. */
-            FATAL_ERROR(ss, SEC_ERROR_UNSUPPORTED_KEYALG,
-                        internal_error);
-            return SECFailure;
-    }
+    expectedGroup = ssl_LookupNamedGroup(group);
+    PORT_Assert(group);
 
     /* Now walk through the keys until we find one for our group */
     cur_p = PR_NEXT_LINK(&ss->ssl3.hs.remoteKeyShares);

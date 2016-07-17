@@ -240,6 +240,11 @@
 #define TLS_DHE_PSK_WITH_AES_128_GCM_SHA256     0x00AA /* RFC 5487 */
 #define TLS_DHE_PSK_WITH_AES_256_GCM_SHA384     0x00AB /* RFC 5487 */
 
+/* Special TLS 1.3 cipher suites that really just specify AEAD */
+#define TLS13_STAR_WITH_AES_128_GCM_SHA256                0xD101
+#define TLS13_STAR_WITH_AES_256_GCM_SHA384                0xD102
+#define TLS13_STAR_WITH_CHACHA20_POLY1305_SHA256          0xD103
+
 /* Netscape "experimental" cipher suites. */
 #define SSL_RSA_OLDFIPS_WITH_3DES_EDE_CBC_SHA   0xffe0
 #define SSL_RSA_OLDFIPS_WITH_DES_CBC_SHA        0xffe1
@@ -247,6 +252,7 @@
 /* New non-experimental openly spec'ed versions of those cipher suites. */
 #define SSL_RSA_FIPS_WITH_3DES_EDE_CBC_SHA      0xfeff
 #define SSL_RSA_FIPS_WITH_DES_CBC_SHA           0xfefe
+
 
 /* DTLS-SRTP cipher suites from RFC 5764 */
 /* If you modify this, also modify MAX_DTLS_SRTP_CIPHER_SUITES in sslimpl.h */
