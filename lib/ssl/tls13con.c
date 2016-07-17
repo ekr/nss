@@ -951,6 +951,80 @@ tls13_AlpnTagAllowed(sslSocket *ss, const SECItem *tag)
     return PR_FALSE;
 }
 
+static SECStatus
+tls13_NegotiateKeyExchange(sslSocket *ss, NamedGroup *group)
+{
+    int index;
+
+    /* We insist on DHE. */
+    if (ss->statelessResume) {
+        if (!memchr(ss->xtnData.psk_ke_modes.data, tls13_psk_dh_ke,
+                    ss->xtnData.psk_ke_modes.len)) {
+            SSL_TRC(3, ("%d: TLS13[%d]: client offered PSK without DH",
+                        SSL_GETPID(), ss->fd));
+            ss->statelessResume = PR_FALSE;
+        }
+    }
+
+    /* Now figure out which key share we like the best out of the
+     * negotiated groups, regardless of what the client offered.
+     * TODO(ekr@rtfm.com): take suboptimal groups because they were
+     * available early?
+     */
+    for (index = 0; index < ssl_named_group_count; ++index) {
+        if (ssl_NamedGroupEnabled(ss, &ssl_named_groups[index])) {
+            *group = ssl_named_groups[index].name;
+            return SECSuccess;
+        }
+    }
+
+    FATAL_ERROR(ss, SSL_ERROR_NO_CYPHER_OVERLAP,
+                handshake_failure);
+    return SECFailure;
+}
+
+static SECStatus
+tls13_NegotiateAuthentication(sslSocket *ss,
+                              SSLSignatureAndHashAlg *sigAndHash)
+{
+    SECStatus rv;
+
+    if (ss->statelessResume) {
+        /* We favor not signing. */
+        if (memchr(ss->xtnData.psk_auth_modes.data, tls13_psk_auth,
+                   ss->xtnData.psk_auth_modes.len)) {
+            sigAndHash->hashAlg = ssl_hash_none;
+            sigAndHash->sigAlg = ssl_sign_null;
+            return SECSuccess;
+        }
+
+        if (!memchr(ss->xtnData.psk_auth_modes.data, tls13_psk_sign_auth,
+                    ss->xtnData.psk_auth_modes.len)) {
+            SSL_TRC(3, ("%d: TLS13[%d]: client offered PSK without valid auth mode",
+                        SSL_GETPID(), ss->fd));
+            ss->statelessResume = PR_FALSE;
+        }
+    }
+
+    /* At this point we are either signing or failing. */
+    /* Select the cert. */
+    rv = ssl3_SelectServerCert(ss);
+    if (rv != SECSuccess) {
+        return SECFailure; /* An alert was sent already. */
+    }
+
+    /* Now select the signature algorithm. */
+    rv = ssl3_PickSignatureHashAlgorithm(ss, sigAndHash);
+    if (rv != SECSuccess) {
+        FATAL_ERROR(ss, SSL_ERROR_UNSUPPORTED_HASH_ALGORITHM,
+                    handshake_failure);
+        return SECFailure;
+    }
+
+    /* OK, the parameters are cool now. */
+    return SECSuccess;
+}
+
 /* Called from ssl3_HandleClientHello after we have parsed the
  * ClientHello and are sure that we are going to do TLS 1.3
  * or fail. */
@@ -982,18 +1056,8 @@ tls13_HandleClientHelloPart2(sslSocket *ss,
     }
 #endif
 
-    rv = ssl3_NegotiateCipherSuite(ss, suites);
-    if (rv != SECSuccess) {
-        FATAL_ERROR(ss, SSL_ERROR_NO_CYPHER_OVERLAP, handshake_failure);
-        return SECFailure;
-    }
-
-    if (ss->ssl3.hs.kea_def->authKeyType != ssl_auth_psk) {
-        /* TODO(ekr@rtfm.com): Free resumeSID. */
-        ss->statelessResume = PR_FALSE;
-    }
-
     if (ss->statelessResume) {
+        /* The client sent a valid session ticket. */
         PORT_Assert(sid);
 
         rv = tls13_RecoverWrappedSharedSecret(ss, sid);
