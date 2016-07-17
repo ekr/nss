@@ -3575,14 +3575,12 @@ tls13_ServerHandlePreSharedKeyXtn(sslSocket *ss, PRUint16 ex_type,
 
     while (data->len) {
         SECItem label;
-        SECItem auth_modes;
-        SECItem ke_modes;
 
-        rv = ssl3_ConsumeHandshakeVariable(ss, &auth_modes, 1,
+        rv = ssl3_ConsumeHandshakeVariable(ss, &ss->xtnData.psk_auth_modes, 1,
                                            &data->data, &data->len);
         if (rv != SECSuccess)
             return rv;
-        rv = ssl3_ConsumeHandshakeVariable(ss, &ke_modes, 1,
+        rv = ssl3_ConsumeHandshakeVariable(ss, &ss->xtnData.psk_ke_modes, 1,
                                            &data->data, &data->len);
         if (rv != SECSuccess)
             return rv;

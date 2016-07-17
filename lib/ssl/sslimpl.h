@@ -830,6 +830,8 @@ struct TLSExtensionDataStr {
     PRBool ticketTimestampVerified;
     PRBool emptySessionTicket;
     PRBool sentSessionTicketInClientHello;
+    SECItem psk_ke_modes;
+    SECItem psk_auth_modes;
 
     /* SNI Extension related data
      * Names data is not coppied from the input buffer. It can not be
