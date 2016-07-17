@@ -2699,35 +2699,34 @@ ssl3_ServerHandleSigAlgsXtn(sslSocket *ss, PRUint16 ex_type, SECItem *data)
         numAlgorithms = 512;
     }
 
-    if (ss->ssl3.hs.clientSigAndHash) {
-        PORT_Free(ss->ssl3.hs.clientSigAndHash);
+    if (ss->ssl3.hs.clientSigSchemes) {
+        PORT_Free(ss->ssl3.hs.clientSigSchemes);
     }
-    ss->ssl3.hs.clientSigAndHash =
-        PORT_NewArray(SSLSignatureAndHashAlg, numAlgorithms);
-    if (!ss->ssl3.hs.clientSigAndHash) {
+    ss->ssl3.hs.clientSigSchemes = PORT_NewArray(SignatureScheme,
+                                                 numAlgorithms);
+    if (!ss->ssl3.hs.clientSigSchemes) {
         (void)SSL3_SendAlert(ss, alert_fatal, internal_error);
         PORT_SetError(SSL_ERROR_RX_MALFORMED_CLIENT_HELLO);
         return SECFailure;
     }
-    ss->ssl3.hs.numClientSigAndHash = 0;
 
     b = algorithms.data;
-    ss->ssl3.hs.numClientSigAndHash = 0;
+    ss->ssl3.hs.numClientSigScheme = 0;
     for (i = 0; i < numAlgorithms; i++) {
-        SSLSignatureAndHashAlg *sigAndHash =
-            &ss->ssl3.hs.clientSigAndHash[ss->ssl3.hs.numClientSigAndHash];
-        sigAndHash->hashAlg = (SSLHashType) * (b++);
-        sigAndHash->sigAlg = (SSLSignType) * (b++);
-        if (ssl3_IsSupportedSignatureAlgorithm(sigAndHash)) {
-            ++ss->ssl3.hs.numClientSigAndHash;
+        SignatureScheme *sigScheme =
+            &ss->ssl3.hs.clientSigSchemes[ss->ssl3.hs.numClientSigScheme];
+        *sigScheme = (SignatureScheme)(b[0] << 8 | b[1]);
+        b += 2;
+        if (ssl3_IsSupportedSignatureScheme(*sigScheme)) {
+            ++ss->ssl3.hs.numClientSigScheme;
         }
     }
 
-    if (!ss->ssl3.hs.numClientSigAndHash) {
+    if (!ss->ssl3.hs.numClientSigScheme) {
         /* We didn't understand any of the client's requested signature
          * formats. We'll use the defaults. */
-        PORT_Free(ss->ssl3.hs.clientSigAndHash);
-        ss->ssl3.hs.clientSigAndHash = NULL;
+        PORT_Free(ss->ssl3.hs.clientSigSchemes);
+        ss->ssl3.hs.clientSigSchemes = NULL;
     }
 
     /* Keep track of negotiated extensions. */
@@ -2744,19 +2743,20 @@ ssl3_ClientSendSigAlgsXtn(sslSocket *ss, PRBool append, PRUint32 maxBytes)
     unsigned int i;
     PRInt32 pos = 0;
     PRUint32 policy;
-    PRUint8 buf[MAX_SIGNATURE_ALGORITHMS * 2];
+    PRUint8 buf[MAX_SIGNATURE_SCHEMES * 2];
 
     if (ss->version < SSL_LIBRARY_VERSION_TLS_1_2) {
         return 0;
     }
 
-    for (i = 0; i < ss->ssl3.signatureAlgorithmCount; i++) {
-        SECOidTag hashOID = ssl3_TLSHashAlgorithmToOID(
-            ss->ssl3.signatureAlgorithms[i].hashAlg);
+    for (i = 0; i < ss->ssl3.signatureSchemeCount; i++) {
+        SSLHashType hashType = ssl3_SignatureSchemeToHashType(
+            ss->ssl3.signatureSchemes[i]);
+        SECOidTag hashOID = ssl3_HashTypeToOID(hashType);
         if ((NSS_GetAlgorithmPolicy(hashOID, &policy) != SECSuccess) ||
             (policy & NSS_USE_ALG_IN_SSL_KX)) {
-            buf[pos++] = ss->ssl3.signatureAlgorithms[i].hashAlg;
-            buf[pos++] = ss->ssl3.signatureAlgorithms[i].sigAlg;
+            buf[pos++] = (ss->ssl3.signatureSchemes[i] >> 8) & 0xff;
+            buf[pos++] = ss->ssl3.signatureSchemes[i] & 0xff;
         }
     }
 

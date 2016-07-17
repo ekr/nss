@@ -43,7 +43,8 @@ make_cert() {
   case $type in
     dsa) type_args='-g 1024' ;;
     rsa) type_args='-g 1024' ;;
-    ec) type_args='-q nistp256' ;;
+    p256) type_args='-q nistp256';type=ec ;;
+    p384) type_args='-q secp384r1';type=ec ;;
   esac
   shift 2
   certscript $@ | ${BINDIR}/certutil -S \
@@ -70,8 +71,9 @@ ssl_gtest_certs() {
   make_cert rsa rsa sign kex
   make_cert rsa_sign rsa sign
   make_cert rsa_decrypt rsa kex
-  make_cert ecdsa ec sign
-  make_cert ecdh_ecdsa ec kex
+  make_cert ecdsa p256 sign
+  make_cert ecdsa384 p384 sign
+  make_cert ecdh_ecdsa p256 kex
   # TODO ecdh_rsa
   make_cert dsa dsa sign
 }

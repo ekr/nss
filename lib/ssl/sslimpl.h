@@ -339,10 +339,8 @@ typedef struct {
 
 #define MAX_DTLS_SRTP_CIPHER_SUITES 4
 
-/* MAX_SIGNATURE_ALGORITHMS allows for a large number of combinations of
- * SSLSignType and SSLHashType, but not all combinations (specifically, this
- * doesn't allow space for combinations with MD5). */
-#define MAX_SIGNATURE_ALGORITHMS 15
+/* MAX_SIGNATURE_SCHEMES allows for all the values we support. */
+#define MAX_SIGNATURE_SCHEMES 12
 
 typedef struct sslOptionsStr {
     /* If SSL_SetNextProtoNego has been called, then this contains the
@@ -933,7 +931,7 @@ typedef struct SSL3HandshakeStateStr {
      * TLS 1.2 and later use only |sha|, for SHA-256. */
     PK11Context *md5;
     PK11Context *sha;
-    SSLHashType tls12CertVerifyHash;
+    SignatureScheme signatureScheme;
     const ssl3KEADef *kea_def;
     ssl3CipherSuite cipher_suite;
     const ssl3CipherSuiteDef *suite_def;
@@ -982,8 +980,8 @@ typedef struct SSL3HandshakeStateStr {
     /* clientSigAndHash contains the contents of the signature_algorithms
      * extension (if any) from the client. This is only valid for TLS 1.2
      * or later. */
-    SSLSignatureAndHashAlg *clientSigAndHash;
-    unsigned int numClientSigAndHash;
+    SignatureScheme *clientSigSchemes;
+    unsigned int numClientSigScheme;
 
     /* This group of values is used for DTLS */
     PRUint16 sendMessageSeq;       /* The sending message sequence
@@ -1088,8 +1086,8 @@ struct ssl3StateStr {
 
     /* TLS 1.2 introduces separate signature algorithm negotiation.
      * This is our preference order. */
-    SSLSignatureAndHashAlg signatureAlgorithms[MAX_SIGNATURE_ALGORITHMS];
-    unsigned int signatureAlgorithmCount;
+    SignatureScheme signatureSchemes[MAX_SIGNATURE_SCHEMES];
+    unsigned int signatureSchemeCount;
 
     /* The version to check if we fell back from our highest version
      * of TLS. Default is 0 in which case we check against the maximum
@@ -1801,8 +1799,7 @@ extern SECStatus ssl3_HandleECDHServerKeyExchange(sslSocket *ss,
 extern SECStatus ssl3_HandleECDHClientKeyExchange(sslSocket *ss,
                                                   SSL3Opaque *b, PRUint32 length,
                                                   sslKeyPair *serverKeys);
-extern SECStatus ssl3_SendECDHServerKeyExchange(
-    sslSocket *ss, const SSLSignatureAndHashAlg *sigAndHash);
+extern SECStatus ssl3_SendECDHServerKeyExchange(sslSocket *ss);
 extern SECStatus tls13_ImportECDHKeyShare(
     sslSocket *ss, SECKEYPublicKey *peerKey,
     SSL3Opaque *b, PRUint32 length, const namedGroupDef *curve);
@@ -1832,14 +1829,11 @@ extern PRInt32 ssl3_ConsumeHandshakeNumber(sslSocket *ss, PRInt32 bytes,
                                            SSL3Opaque **b, PRUint32 *length);
 extern SECStatus ssl3_ConsumeHandshakeVariable(sslSocket *ss, SECItem *i,
                                                PRInt32 bytes, SSL3Opaque **b, PRUint32 *length);
-extern PRBool ssl3_IsSupportedSignatureAlgorithm(
-    const SSLSignatureAndHashAlg *alg);
-extern SECStatus ssl3_CheckSignatureAndHashAlgorithmConsistency(
-    sslSocket *ss, const SSLSignatureAndHashAlg *sigAndHash,
-    CERTCertificate *cert);
-extern SECStatus ssl3_ConsumeSignatureAndHashAlgorithm(
-    sslSocket *ss, SSL3Opaque **b, PRUint32 *length,
-    SSLSignatureAndHashAlg *out);
+extern PRBool ssl3_IsSupportedSignatureScheme(SignatureScheme scheme);
+extern SECStatus ssl3_CheckSignatureSchemeConsistency(
+    sslSocket *ss, SignatureScheme scheme, CERTCertificate *cert);
+extern SECStatus ssl3_ConsumeSignatureScheme(
+    sslSocket *ss, SSL3Opaque **b, PRUint32 *length, SignatureScheme *out);
 extern SECStatus ssl3_SignHashes(SSL3Hashes *hash, SECKEYPrivateKey *key,
                                  SECItem *buf, PRBool isTLS);
 extern SECStatus ssl3_VerifySignedHashes(SSL3Hashes *hash,
@@ -1996,12 +1990,11 @@ SECStatus ssl3_ParseCertificateRequestCAs(sslSocket *ss, SSL3Opaque **b,
                                           PRUint32 *length, PLArenaPool *arena,
                                           CERTDistNames *ca_list);
 SECStatus ssl3_CompleteHandleCertificateRequest(sslSocket *ss,
-                                                SECItem *algorithms,
+                                                const SECItem *algorithms,
                                                 CERTDistNames *ca_list);
 SECStatus ssl3_SendCertificateVerify(sslSocket *ss,
-                                     SECKEYPrivateKey *privKey);
+                                     const sslKeyPair *keyPair);
 SECStatus ssl3_SendServerHello(sslSocket *ss);
-SECOidTag ssl3_TLSHashAlgorithmToOID(SSLHashType hashFunc);
 SECStatus ssl3_ComputeHandshakeHashes(sslSocket *ss,
                                       ssl3CipherSpec *spec,
                                       SSL3Hashes *hashes,
@@ -2027,13 +2020,12 @@ PRBool ssl3_ClientExtensionAdvertised(sslSocket *ss, PRUint16 ex_type);
 SECStatus ssl3_FillInCachedSID(sslSocket *ss, sslSessionID *sid);
 const ssl3CipherSuiteDef *ssl_LookupCipherSuiteDef(ssl3CipherSuite suite);
 SECStatus ssl3_SelectServerCert(sslSocket *ss);
-SECStatus ssl3_TLSSignatureAlgorithmForKeyType(KeyType keyType,
-                                               SSLSignType *out);
+SECOidTag ssl3_HashTypeToOID(SSLHashType hashType);
+SSLSignType ssl3_SignTypeForKey(const SECKEYPublicKey *key);
+SSLHashType ssl3_SignatureSchemeToHashType(SignatureScheme scheme);
 
 SECStatus ssl3_SetCipherSuite(sslSocket *ss, ssl3CipherSuite chosenSuite,
                               PRBool initHashes);
-SECStatus ssl3_PickSignatureHashAlgorithm(sslSocket *ss,
-                                          SSLSignatureAndHashAlg *out);
 
 /* Pull in TLS 1.3 functions */
 #include "tls13con.h"
@@ -2065,8 +2057,6 @@ ssl3_TLSPRFWithMasterSecret(ssl3CipherSpec *spec,
                             const unsigned char *val, unsigned int valLen,
                             unsigned char *out, unsigned int outLen,
                             HASH_HashType tls12HashType);
-extern SECOidTag
-ssl3_TLSHashAlgorithmToOID(SSLHashType hashFunc);
 
 #ifdef TRACE
 #define SSL_TRACE(msg) ssl_Trace msg

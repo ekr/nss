@@ -1,4 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
 /* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
@@ -27,13 +27,19 @@ SSLInt_IncrementClientHandshakeVersion(PRFileDesc *fd)
 }
 
 PRUint32
-SSLInt_DetermineKEABits(PRUint16 serverKeyBits, SSLAuthType authAlgorithm) {
-    // For ECDSA authentication we expect a curve for key exchange with the
-    // same strength as the one used for the certificate's signature.
+SSLInt_DetermineKEABits(PRUint16 serverKeyBits,
+                        const SSLCipherSuiteInfo *info) {
+    SSLAuthType authAlgorithm = info->authType;
+    // For ECDSA authentication we expect a curve for key exchange to be
+    // selected based on the symmetric key strength.
     if (authAlgorithm == ssl_auth_ecdsa ||
         authAlgorithm == ssl_auth_ecdh_rsa ||
         authAlgorithm == ssl_auth_ecdh_ecdsa) {
-        return serverKeyBits;
+        if (info->symKeyBits == 256) {
+            return serverKeyBits;
+        } else {
+            return 256U;
+        }
     }
 
     PORT_Assert(authAlgorithm == ssl_auth_rsa_decrypt ||

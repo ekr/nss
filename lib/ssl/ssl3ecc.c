@@ -666,18 +666,17 @@ ssl3_HandleECDHServerKeyExchange(sslSocket *ss, SSL3Opaque *b, PRUint32 length)
     }
 
     if (ss->ssl3.prSpec->version >= SSL_LIBRARY_VERSION_TLS_1_2) {
-        SSLSignatureAndHashAlg sigAndHash;
-        rv = ssl3_ConsumeSignatureAndHashAlgorithm(ss, &b, &length,
-                                                   &sigAndHash);
+        SignatureScheme sigScheme;
+        rv = ssl3_ConsumeSignatureScheme(ss, &b, &length, &sigScheme);
         if (rv != SECSuccess) {
             goto loser; /* malformed or unsupported. */
         }
-        rv = ssl3_CheckSignatureAndHashAlgorithmConsistency(
-            ss, &sigAndHash, ss->sec.peerCert);
+        rv = ssl3_CheckSignatureSchemeConsistency(ss, sigScheme,
+                                                  ss->sec.peerCert);
         if (rv != SECSuccess) {
             goto loser;
         }
-        hashAlg = sigAndHash.hashAlg;
+        hashAlg = ssl3_SignatureSchemeToHashType(sigScheme);
     }
 
     rv = ssl3_ConsumeHandshakeVariable(ss, &signature, 2, &b, &length);
@@ -768,14 +767,13 @@ loser:
 }
 
 SECStatus
-ssl3_SendECDHServerKeyExchange(
-    sslSocket *ss,
-    const SSLSignatureAndHashAlg *sigAndHash)
+ssl3_SendECDHServerKeyExchange(sslSocket *ss)
 {
     SECStatus rv = SECFailure;
     int length;
     PRBool isTLS, isTLS12;
     SECItem signed_hash = { siBuffer, NULL, 0 };
+    SSLHashType hashAlg = ssl_hash_none;
     SSL3Hashes hashes;
 
     SECItem ec_params = { siBuffer, NULL, 0 };
@@ -820,8 +818,10 @@ ssl3_SendECDHServerKeyExchange(
     ec_params.data[2] = keyPair->group->name & 0xff;
 
     pubKey = keyPair->keys->pubKey;
-    rv = ssl3_ComputeECDHKeyHash(sigAndHash->hashAlg,
-                                 ec_params,
+    if (ss->ssl3.pwSpec->version == SSL_LIBRARY_VERSION_TLS_1_2) {
+        hashAlg = ssl3_SignatureSchemeToHashType(ss->ssl3.hs.signatureScheme);
+    }
+    rv = ssl3_ComputeECDHKeyHash(hashAlg, ec_params,
                                  pubKey->u.ec.publicValue,
                                  &ss->ssl3.hs.client_random,
                                  &ss->ssl3.hs.server_random,
@@ -866,7 +866,7 @@ ssl3_SendECDHServerKeyExchange(
     }
 
     if (isTLS12) {
-        rv = ssl3_AppendSignatureAndHashAlgorithm(ss, sigAndHash);
+        rv = ssl3_AppendHandshakeNumber(ss, ss->ssl3.hs.signatureScheme, 2);
         if (rv != SECSuccess) {
             goto loser; /* err set by AppendHandshake. */
         }

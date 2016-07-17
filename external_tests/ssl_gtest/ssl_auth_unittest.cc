@@ -70,11 +70,11 @@ static const SSLSignatureAndHashAlg SignatureRsaSha256[] = {
 // When signature algorithms match up, this should connect successfully; even
 // for TLS 1.1 and 1.0, where they should be ignored.
 TEST_P(TlsConnectGeneric, SignatureAlgorithmServerAuth) {
+  Reset(TlsAgent::kServerEcdsa384);
   client_->SetSignatureAlgorithms(SignatureEcdsaSha384,
                                   PR_ARRAY_SIZE(SignatureEcdsaSha384));
   server_->SetSignatureAlgorithms(SignatureEcdsaSha384,
                                   PR_ARRAY_SIZE(SignatureEcdsaSha384));
-  Reset(TlsAgent::kServerEcdsa);
   Connect();
 }
 
@@ -86,25 +86,45 @@ TEST_P(TlsConnectGeneric, SignatureAlgorithmClientOnly) {
     {ssl_hash_sha384, ssl_sign_rsa}, // supported but unusable
     {ssl_hash_md5, ssl_sign_ecdsa} // unsupported and ignored
   };
+  Reset(TlsAgent::kServerEcdsa384);
   client_->SetSignatureAlgorithms(clientAlgorithms,
                                   PR_ARRAY_SIZE(clientAlgorithms));
-  Reset(TlsAgent::kServerEcdsa);
   Connect();
 }
 
 // Here the server picks a single option, which should work in all versions.
 // Defaults on the client include the provided option.
-TEST_P(TlsConnectGeneric, SignatureAlgorithmServerOnly) {
+TEST_P(TlsConnectGenericPre13, SignatureAlgorithmServerOnly) {
+  Reset(TlsAgent::kServerEcdsa384);
   server_->SetSignatureAlgorithms(SignatureEcdsaSha384,
                                   PR_ARRAY_SIZE(SignatureEcdsaSha384));
-  Reset(TlsAgent::kServerEcdsa);
   Connect();
+  CheckKeys(ssl_kea_ecdh, ssl_auth_ecdsa);
 }
 
-// There is no need for overlap on signatures; since we don't actually use the
-// signatures for static RSA, this should still connect successfully.
-// This should also work in TLS 1.0 and 1.1 where the algorithms aren't used.
-TEST_P(TlsConnectGenericPre13, SignatureAlgorithmNoOverlapStaticRsa) {
+#ifdef NSS_ENABLE_TLS_1_3
+TEST_P(TlsConnectTls13, SignatureAlgorithmServerUnsupported) {
+  Reset(TlsAgent::kServerEcdsa); // P-256 cert
+  server_->SetSignatureAlgorithms(SignatureEcdsaSha384,
+                                  PR_ARRAY_SIZE(SignatureEcdsaSha384));
+  ConnectExpectFail();
+  server_->CheckErrorCode(SSL_ERROR_UNSUPPORTED_SIGNATURE_ALGORITHM);
+  client_->CheckErrorCode(SSL_ERROR_NO_CYPHER_OVERLAP);
+}
+
+TEST_P(TlsConnectTls13, SignatureAlgorithmClientUnsupported) {
+  Reset(TlsAgent::kServerEcdsa); // P-256 cert
+  client_->SetSignatureAlgorithms(SignatureEcdsaSha384,
+                                  PR_ARRAY_SIZE(SignatureEcdsaSha384));
+  ConnectExpectFail();
+  server_->CheckErrorCode(SSL_ERROR_UNSUPPORTED_SIGNATURE_ALGORITHM);
+  client_->CheckErrorCode(SSL_ERROR_NO_CYPHER_OVERLAP);
+}
+#endif
+
+// There there is no overlap on signature schemes, we still connect successfully
+// in TLS 1.0 and 1.1 where the algorithms aren't used.
+TEST_P(TlsConnectPre12, SignatureAlgorithmNoOverlapStaticRsa) {
   client_->SetSignatureAlgorithms(SignatureRsaSha384,
                                   PR_ARRAY_SIZE(SignatureRsaSha384));
   server_->SetSignatureAlgorithms(SignatureRsaSha256,
@@ -112,6 +132,18 @@ TEST_P(TlsConnectGenericPre13, SignatureAlgorithmNoOverlapStaticRsa) {
   EnableOnlyStaticRsaCiphers();
   Connect();
   CheckKeys(ssl_kea_rsa, ssl_auth_rsa_decrypt);
+}
+
+// There there is no overlap on signature schemes, TLS 1.2 fails.
+TEST_P(TlsConnectTls12, SignatureAlgorithmNoOverlapStaticRsa) {
+  client_->SetSignatureAlgorithms(SignatureRsaSha384,
+                                  PR_ARRAY_SIZE(SignatureRsaSha384));
+  server_->SetSignatureAlgorithms(SignatureRsaSha256,
+                                  PR_ARRAY_SIZE(SignatureRsaSha256));
+  EnableOnlyStaticRsaCiphers();
+  ConnectExpectFail();
+  server_->CheckErrorCode(SSL_ERROR_UNSUPPORTED_SIGNATURE_ALGORITHM);
+  client_->CheckErrorCode(SSL_ERROR_NO_CYPHER_OVERLAP);
 }
 
 // TODO(ekr@rtfm.com): We need to enable this for 1.3 when we fix

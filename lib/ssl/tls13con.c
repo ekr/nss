@@ -727,8 +727,7 @@ tls13_ComputeEarlySecrets(sslSocket *ss, PRBool setup0Rtt)
 
     /* Now compute the Hash of the resumptionContext so we can cache
      * that. */
-    ctx = PK11_CreateDigestContext(ssl3_TLSHashAlgorithmToOID(
-        tls13_GetHash(ss)));
+    ctx = PK11_CreateDigestContext(ssl3_HashTypeToOID(tls13_GetHash(ss)));
     if (!ctx) {
         PORT_SetError(SEC_ERROR_NO_MEMORY);
         return SECFailure;
@@ -1233,7 +1232,7 @@ tls13_SendCertificateRequest(sslSocket *ss)
     int nnames;
     SECItem *name;
     int i;
-    PRUint8 sigAlgs[MAX_SIGNATURE_ALGORITHMS * 2];
+    PRUint8 sigAlgs[MAX_SIGNATURE_SCHEMES * 2];
     unsigned int sigAlgsLength = 0;
     int length;
 
@@ -1813,7 +1812,7 @@ tls13_AddContextToHashes(sslSocket *ss, const TLS13CombinedHash *hashes,
     /* Double check that we are doing the same hash.*/
     PORT_Assert(hashes->len == tls13_GetHashSize(ss) * 2);
 
-    ctx = PK11_CreateDigestContext(ssl3_TLSHashAlgorithmToOID(algorithm));
+    ctx = PK11_CreateDigestContext(ssl3_HashTypeToOID(algorithm));
     if (!ctx) {
         PORT_SetError(SEC_ERROR_NO_MEMORY);
         goto loser;
@@ -2106,8 +2105,7 @@ tls13_ComputeHandshakeHashes(sslSocket *ss,
     if (ss->ssl3.hs.hashType == handshake_hash_unknown) {
         /* Backup: if we haven't done any hashing, then hash now.
          * This happens when we are doing 0-RTT on the client. */
-        ctx = PK11_CreateDigestContext(
-            ssl3_TLSHashAlgorithmToOID(tls13_GetHash(ss)));
+        ctx = PK11_CreateDigestContext(ssl3_HashTypeToOID(tls13_GetHash(ss)));
         if (!ctx) {
             ssl_MapLowLevelError(SSL_ERROR_SHA_DIGEST_FAILURE);
             return SECFailure;
@@ -2438,7 +2436,7 @@ tls13_SendCertificateVerify(sslSocket *ss, SECKEYPrivateKey *privKey)
     SECStatus rv = SECFailure;
     SECItem buf = { siBuffer, NULL, 0 };
     unsigned int len;
-    SSLSignatureAndHashAlg sigAndHash;
+    SSLHashType hashAlg;
     TLS13CombinedHash hash;
     SSL3Hashes tbsHash; /* The hash "to be signed". */
 
@@ -2454,26 +2452,14 @@ tls13_SendCertificateVerify(sslSocket *ss, SECKEYPrivateKey *privKey)
         return SECFailure;
     }
 
-    if (ss->sec.isServer) {
-        rv = ssl3_PickSignatureHashAlgorithm(ss, &sigAndHash);
-        if (rv != SECSuccess) {
-            return SECFailure;
-        }
-    } else {
-        PORT_Assert(ss->ssl3.hs.tls12CertVerifyHash != ssl_hash_none);
-        if (ss->ssl3.hs.tls12CertVerifyHash == ssl_hash_none) {
-            PORT_SetError(SEC_ERROR_LIBRARY_FAILURE);
-            return SECFailure;
-        }
-        sigAndHash.hashAlg = ss->ssl3.hs.tls12CertVerifyHash;
-        rv = ssl3_TLSSignatureAlgorithmForKeyType(privKey->keyType,
-                                                  &sigAndHash.sigAlg);
-        if (rv != SECSuccess) {
-            return SECFailure;
-        }
+    PORT_Assert(ss->ssl3.hs.signatureScheme != ssl_sig_none);
+    if (ss->ssl3.hs.signatureScheme == ssl_sig_none) {
+        PORT_SetError(SEC_ERROR_LIBRARY_FAILURE);
+        return SECFailure;
     }
-    rv = tls13_AddContextToHashes(ss, &hash, sigAndHash.hashAlg, PR_TRUE,
-                                  &tbsHash);
+    hashAlg = ssl3_SignatureSchemeToHashType(ss->ssl3.hs.signatureScheme);
+    rv = tls13_AddContextToHashes(ss, &hash, hashAlg,
+                                  PR_TRUE, &tbsHash);
     if (rv != SECSuccess) {
         return SECFailure;
     }
@@ -2505,9 +2491,9 @@ tls13_SendCertificateVerify(sslSocket *ss, SECKEYPrivateKey *privKey)
         goto done; /* error code set by AppendHandshake */
     }
 
-    rv = ssl3_AppendSignatureAndHashAlgorithm(ss, &sigAndHash);
+    rv = ssl3_AppendHandshakeNumber(ss, ss->ssl3.hs.signatureScheme, 2);
     if (rv != SECSuccess) {
-        goto done; /* err set by AppendHandshake. */
+        goto done; /* err set by AppendHandshakeNumber */
     }
 
     rv = ssl3_AppendHandshakeVariable(ss, buf.data, buf.len, 2);
@@ -2533,7 +2519,8 @@ tls13_HandleCertificateVerify(sslSocket *ss, SSL3Opaque *b, PRUint32 length,
 {
     SECItem signed_hash = { siBuffer, NULL, 0 };
     SECStatus rv;
-    SSLSignatureAndHashAlg sigAndHash;
+    SignatureScheme sigScheme;
+    SSLHashType hashAlg;
     SSL3Hashes tbsHash;
 
     SSL_TRC(3, ("%d: TLS13[%d]: handle certificate_verify handshake",
@@ -2548,22 +2535,20 @@ tls13_HandleCertificateVerify(sslSocket *ss, SSL3Opaque *b, PRUint32 length,
     }
     PORT_Assert(hashes);
 
-    rv = ssl3_ConsumeSignatureAndHashAlgorithm(ss, &b, &length,
-                                               &sigAndHash);
+    rv = ssl3_ConsumeSignatureScheme(ss, &b, &length, &sigScheme);
     if (rv != SECSuccess) {
         PORT_SetError(SSL_ERROR_RX_MALFORMED_CERT_VERIFY);
         return SECFailure;
     }
 
-    rv = ssl3_CheckSignatureAndHashAlgorithmConsistency(
-        ss, &sigAndHash, ss->sec.peerCert);
+    rv = ssl3_CheckSignatureSchemeConsistency(ss, sigScheme, ss->sec.peerCert);
     if (rv != SECSuccess) {
         FATAL_ERROR(ss, SSL_ERROR_RX_MALFORMED_CERT_VERIFY, decrypt_error);
         return SECFailure;
     }
+    hashAlg = ssl3_SignatureSchemeToHashType(sigScheme);
 
-    rv = tls13_AddContextToHashes(ss, hashes, sigAndHash.hashAlg, PR_FALSE,
-                                  &tbsHash);
+    rv = tls13_AddContextToHashes(ss, hashes, hashAlg, PR_FALSE, &tbsHash);
     if (rv != SECSuccess) {
         FATAL_ERROR(ss, SSL_ERROR_DIGEST_FAILURE, internal_error);
         return SECFailure;
