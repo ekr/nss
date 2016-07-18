@@ -150,6 +150,7 @@ SSL_GetPreliminaryChannelInfo(PRFileDesc *fd,
 #define S_RSA "RSA", ssl_auth_rsa_decrypt
 #define S_ECDSA "ECDSA", ssl_auth_ecdsa
 #define S_PSK "PSK", ssl_auth_psk
+#define S_NULL "NULL", ssl_auth_null
 
 /* real authentication algorithm */
 #define A_DSA ssl_auth_dsa
@@ -162,6 +163,7 @@ SSL_GetPreliminaryChannelInfo(PRFileDesc *fd,
 /* Report ssl_auth_null for export suites that can't decide between
  * ssl_auth_rsa_sign and ssl_auth_rsa_decrypt. */
 #define A_EXP ssl_auth_null
+#define A_NULL ssl_auth_null
 
 /* key exchange */
 #define K_DHE "DHE", ssl_kea_dh
@@ -171,6 +173,7 @@ SSL_GetPreliminaryChannelInfo(PRFileDesc *fd,
 #define K_ECDHE "ECDHE", ssl_kea_ecdh
 #define K_ECDHE_PSK "ECDHE-PSK", ssl_kea_ecdh_psk
 #define K_DHE_PSK "DHE-PSK", ssl_kea_dh_psk
+#define K_ANY "TLS 1.3", ssl_kea_tls13_any
 
 /* record protection cipher */
 #define C_SEED "SEED", calg_seed
@@ -212,6 +215,10 @@ SSL_GetPreliminaryChannelInfo(PRFileDesc *fd,
 
 static const SSLCipherSuiteInfo suiteInfo[] = {
     /* <------ Cipher suite --------------------> <auth> <KEA>  <bulk cipher> <MAC> <FIPS> */
+    { 0, CS_(TLS13_STAR_WITH_AES_128_GCM_SHA256), S_NULL, K_ANY, C_AESGCM, B_128, M_AEAD_128, F_FIPS_STD, A_NULL },
+    { 0, CS_(TLS13_STAR_WITH_CHACHA20_POLY1305_SHA256), S_NULL, K_ANY, C_CHACHA20, B_256, M_AEAD_128, F_NFIPS_STD, A_NULL },
+    { 0, CS_(TLS13_STAR_WITH_AES_256_GCM_SHA384), S_NULL, K_ANY, C_AESGCM, B_256, M_AEAD_128, F_NFIPS_STD, A_NULL },
+
     { 0, CS(RSA_WITH_AES_128_GCM_SHA256), S_RSA, K_RSA, C_AESGCM, B_128, M_AEAD_128, F_FIPS_STD, A_RSAD },
     { 0, CS(DHE_RSA_WITH_CHACHA20_POLY1305_SHA256), S_RSA, K_DHE, C_CHACHA20, B_256, M_AEAD_128, F_NFIPS_STD, A_RSAS },
 
