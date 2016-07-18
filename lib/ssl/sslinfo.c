@@ -338,6 +338,7 @@ SSL_GetCipherSuiteInfo(PRUint16 cipherSuite,
             return SECSuccess;
         }
     }
+
     PORT_SetError(SEC_ERROR_INVALID_ARGS);
     return SECFailure;
 }
