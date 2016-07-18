@@ -491,6 +491,8 @@ typedef enum {
     SEC_OID_TLS_FFDHE_8192 = 353,
     SEC_OID_TLS_DHE_CUSTOM = 354,
 
+    SEC_OID_TLS13_ANY = 355,
+
     SEC_OID_TOTAL
 } SECOidTag;
 

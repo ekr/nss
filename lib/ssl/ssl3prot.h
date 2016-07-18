@@ -205,6 +205,7 @@ typedef enum {
     kea_ecdh_anon,
     kea_ecdhe_psk,
     kea_dhe_psk,
+    kea_tls13_any,
 } SSL3KeyExchangeAlgorithm;
 
 typedef struct {

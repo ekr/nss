@@ -934,7 +934,7 @@ typedef struct SSL3HandshakeStateStr {
     PK11Context *md5;
     PK11Context *sha;
     SignatureScheme signatureScheme;
-    const ssl3KEADef *kea_def;
+    ssl3KEADef *kea_def;
     ssl3CipherSuite cipher_suite;
     const ssl3CipherSuiteDef *suite_def;
     SSLCompressionMethod compression;
@@ -2028,6 +2028,11 @@ SSLHashType ssl3_SignatureSchemeToHashType(SignatureScheme scheme);
 
 SECStatus ssl3_SetCipherSuite(sslSocket *ss, ssl3CipherSuite chosenSuite,
                               PRBool initHashes);
+SECStatus ssl3_PickSignatureScheme(sslSocket *ss, SECKEYPublicKey *key,
+                                   SignatureScheme *peerSchemes,
+                                   unsigned int peerSchemeCount,
+                                   PRBool preferSha1);
+
 
 /* Pull in TLS 1.3 functions */
 #include "tls13con.h"

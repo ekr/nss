@@ -919,7 +919,11 @@ tls13_CanResume(sslSocket *ss, const sslSessionID *sid)
         return PR_FALSE;
     }
 
-    // TODO(ekr@rtfm.com): Force the same cert if we sign and resume. */
+    if (sid->u.ssl3.cipherSuite != ss->ssl3.hs.cipher_suite) {
+        return PR_FALSE;
+    }
+
+    // TODO(ekr@rtfm.com): Force the same cert if we sign and resume?
     /* Server sids don't remember the server cert we previously sent, but they
      * do remember the type of certificate we originally used, so we can locate
      * it again, provided that the current ssl socket has had its server certs
@@ -954,7 +958,7 @@ tls13_AlpnTagAllowed(sslSocket *ss, const SECItem *tag)
 }
 
 static SECStatus
-tls13_NegotiateKeyExchange(sslSocket *ss, NamedGroup *group)
+tls13_NegotiateKeyExchange(sslSocket *ss, namedGroupDef *group)
 {
     int index;
 
@@ -975,7 +979,7 @@ tls13_NegotiateKeyExchange(sslSocket *ss, NamedGroup *group)
      */
     for (index = 0; index < ssl_named_group_count; ++index) {
         if (ssl_NamedGroupEnabled(ss, &ssl_named_groups[index])) {
-            *group = ssl_named_groups[index].name;
+            *group = ssl_named_groups[index];
             return SECSuccess;
         }
     }
@@ -985,76 +989,50 @@ tls13_NegotiateKeyExchange(sslSocket *ss, NamedGroup *group)
     return SECFailure;
 }
 
-/* ssl3_PickSignatureHashAlgorithm selects a hash algorithm to use when signing
- * elements of the handshake. (The negotiated cipher suite determines the
- * signature algorithm.) Prior to TLS 1.2, the MD5/SHA1 combination is always
- * used. With TLS 1.2, a client may advertise its support for signature and
- * hash combinations. */
 SECStatus
-tls13_PickSignatureHashAlgorithm(sslSocket *ss,
-                                 SSLSignatureAndHashAlg *out)
+tls13_SelectServerCert(sslSocket *ss)
 {
-    PRUint32 policy;
-    unsigned int i, j;
+    PRCList *cursor;
+    SECStatus rv;
 
-    out->sigAlg = ss->ssl3.hs.kea_def->signKeyType;
-
-    if (ss->version <= SSL_LIBRARY_VERSION_TLS_1_1) {
-        /* SEC_OID_UNKNOWN means the MD5/SHA1 combo hash used in TLS 1.1 and
-         * prior. */
-        out->hashAlg = ssl_hash_none;
-        return SECSuccess;
+    if (ss->ssl3.hs.numClientSigScheme == 0) {
+        /* TODO test what happens when we strip signature_algorithms... this
+           might not be needed */
+        FATAL_ERROR(ss, SSL_ERROR_RX_MALFORMED_CLIENT_HELLO,
+                    missing_extension);
+        return SECFailure;
     }
 
-    if (ss->ssl3.hs.numClientSigAndHash == 0) {
-        /* If the client didn't provide any signature_algorithms extension then
-         * we can assume that they support SHA-1:
-         * https://tools.ietf.org/html/rfc5246#section-7.4.1.4.1 */
-        out->hashAlg = ssl_hash_sha1;
-        return SECSuccess;
-    }
+    /* This picks the first certificate that has:
+     * a) the right authentication method, and
+     * b) the right named curve (EC only)
+     *
+     * We might want to do some sort of ranking here later.  For now, it's all
+     * based on what order they are configured in. */
+    for (cursor = PR_NEXT_LINK(&ss->serverCerts);
+         cursor != &ss->serverCerts;
+         cursor = PR_NEXT_LINK(cursor)) {
+        sslServerCert *cert = (sslServerCert *)cursor;
 
-    /* Here we look for the first server preference that the client has
-     * indicated support for in their signature_algorithms extension. */
-    for (i = 0; i < ss->ssl3.signatureAlgorithmCount; ++i) {
-        const SSLSignatureAndHashAlg *serverPref =
-            &ss->ssl3.signatureAlgorithms[i];
-        SECOidTag hashOID;
-        if (serverPref->sigAlg != out->sigAlg) {
-            continue;
-        }
-        hashOID = ssl3_TLSHashAlgorithmToOID(serverPref->hashAlg);
-        if ((NSS_GetAlgorithmPolicy(hashOID, &policy) == SECSuccess) &&
-            !(policy & NSS_USE_ALG_IN_SSL_KX)) {
-            /* we ignore hashes we don't support */
-            continue;
-        }
-        for (j = 0; j < ss->ssl3.hs.numClientSigAndHash; j++) {
-            const SSLSignatureAndHashAlg *clientPref =
-                &ss->ssl3.hs.clientSigAndHash[j];
-            if (clientPref->hashAlg == serverPref->hashAlg &&
-                clientPref->sigAlg == out->sigAlg) {
-                out->hashAlg = serverPref->hashAlg;
-                return SECSuccess;
-            }
+        rv = ssl3_PickSignatureScheme(ss, cert->serverKeyPair->pubKey,
+                                      ss->ssl3.hs.clientSigSchemes,
+                                      ss->ssl3.hs.numClientSigScheme,
+                                      PR_FALSE);
+        if (rv == SECSuccess) {
+            /* Found one. */
+            ss->sec.serverCert = cert;
+            ss->sec.authType = cert->certType.authType;
+            ss->sec.authKeyBits = cert->serverKeyBits;
+            return SECSuccess;
         }
     }
 
-    PORT_SetError(SSL_ERROR_UNSUPPORTED_HASH_ALGORITHM);
+    FATAL_ERROR(ss, SSL_ERROR_NO_CYPHER_OVERLAP, handshake_failure);
     return SECFailure;
 }
 
 static SECStatus
-tls13_SelectSigningCert(sslSocket *ss,
-                        SECItem *algorithms)
-{
-
-
-}
-
-static SECStatus
-tls13_NegotiateAuthentication(sslSocket *ss,
-                              SSLSignatureAndHashAlg *sigAndHash)
+tls13_NegotiateAuthentication(sslSocket *ss)
 {
     SECStatus rv;
 
@@ -1062,8 +1040,9 @@ tls13_NegotiateAuthentication(sslSocket *ss,
         /* We favor not signing. */
         if (memchr(ss->xtnData.psk_auth_modes.data, tls13_psk_auth,
                    ss->xtnData.psk_auth_modes.len)) {
-            sigAndHash->hashAlg = ssl_hash_none;
-            sigAndHash->sigAlg = ssl_sign_null;
+            ss->ssl3.hs.signatureScheme = ssl_sig_none;
+            ss->ssl3.hs.kea_def->authKeyType = ssl_auth_psk;
+            ss->ssl3.hs.kea_def->signKeyType = ssl_sign_null;
             return SECSuccess;
         }
 
@@ -1075,13 +1054,12 @@ tls13_NegotiateAuthentication(sslSocket *ss,
         }
     }
 
-    /* Now select the signature algorithm. */
-    rv = ssl3_PickSignatureHashAlgorithm(ss, sigAndHash);
+    /* We've now established that we need to sign.... */
+    rv = tls13_SelectServerCert(ss);
     if (rv != SECSuccess) {
-        FATAL_ERROR(ss, SSL_ERROR_UNSUPPORTED_HASH_ALGORITHM,
-                    handshake_failure);
         return SECFailure;
     }
+    ss->ssl3.hs.kea_def->authKeyType = ss->sec.serverCert->certType.authType;
 
     /* OK, the parameters are cool now. */
     return SECSuccess;
@@ -1097,8 +1075,29 @@ tls13_HandleClientHelloPart2(sslSocket *ss,
 {
     SECStatus rv;
     SSL3Statistics *ssl3stats = SSL_GetStatistics();
-    SSLSignatureAndHashAlg sigAndHash;
-    NamedGroup expectedGroup;
+    namedGroupDef expectedGroup;
+    ssl3KEADef *kea_def;
+    int j;
+
+#ifndef PARANOID
+    /* Look for a matching cipher suite. */
+    j = ssl3_config_match_init(ss);
+    if (j <= 0) { /* no ciphers are working/supported by PK11 */
+        FATAL_ERROR(ss, PORT_GetError(), internal_error);
+        return SECFailure;
+    }
+#endif
+
+    /* Now try to select the cipher suite. */
+    rv = ssl3_NegotiateCipherSuite(ss, suites);
+    if (rv != SECSuccess) {
+        FATAL_ERROR(ss, SSL_ERROR_NO_CYPHER_OVERLAP, handshake_failure);
+        return SECFailure;
+    }
+    /* Now create a synthetic kea_def. */
+    kea_def = PORT_ZNew(ssl3KEADef);
+    *kea_def = *ss->ssl3.hs.kea_def;
+    ss->ssl3.hs.kea_def = kea_def;
 
     /* Check if we could in principle resume. */
     if (ss->statelessResume) {
@@ -1119,7 +1118,7 @@ tls13_HandleClientHelloPart2(sslSocket *ss,
     }
 
     /* Select the authentication (this is also handshake shape). */
-    rv = tls13_NegotiateAuthentication(ss, &sigAndHash);
+    rv = tls13_NegotiateAuthentication(ss);
     if (rv != SECSuccess) {
         return SECFailure;
     }
@@ -1161,6 +1160,18 @@ tls13_HandleClientHelloPart2(sslSocket *ss,
         SSL_AtomicIncrementLong(&ssl3stats->hch_sid_cache_misses);
     }
 
+    /* Now that we've established if we're doing a PSK, we
+       can update the rest of kea_def. */
+    ss->ssl3.hs.kea_def->ephemeral = PR_TRUE;
+    if (ss->statelessResume) {
+        ss->ssl3.hs.kea_def->exchKeyType =
+                expectedGroup.type == group_type_ec ?
+                ssl_kea_ecdh_psk : ssl_kea_dh_psk;
+    } else {
+        ss->ssl3.hs.kea_def->exchKeyType =
+                expectedGroup.type == group_type_ec ?
+                ssl_kea_ecdh : ssl_kea_dh;
+    }
     rv = tls13_ComputeEarlySecrets(ss, ss->ssl3.hs.doing0Rtt);
     if (rv != SECSuccess) {
         FATAL_ERROR(ss, SEC_ERROR_LIBRARY_FAILURE, internal_error);
@@ -1192,7 +1203,7 @@ tls13_HandleClientHelloPart2(sslSocket *ss,
     /* If this is TLS 1.3 we are expecting a ClientKeyShare
      * extension. Missing/absent extension cause failure
      * below. */
-    rv = tls13_HandleClientKeyShare(ss, expectedGroup);
+    rv = tls13_HandleClientKeyShare(ss, expectedGroup.name);
     if (rv != SECSuccess) {
         return SECFailure; /* An alert was sent already. */
     }

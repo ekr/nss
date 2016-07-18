@@ -95,6 +95,10 @@ static SECStatus ssl3_AESGCMBypass(ssl3KeyMaterial *keys, PRBool doDecrypt,
 /* clang-format off */
 static ssl3CipherSuiteCfg cipherSuites[ssl_V3_SUITES_IMPLEMENTED] = {
    /*      cipher_suite                     policy       enabled   isPresent */
+ /* Special TLS 1.3 AEAD-only suites. */
+ { TLS13_STAR_WITH_AES_128_GCM_SHA256, SSL_ALLOWED, PR_TRUE, PR_FALSE },
+ { TLS13_STAR_WITH_CHACHA20_POLY1305_SHA256, SSL_ALLOWED, PR_TRUE, PR_FALSE },
+ { TLS13_STAR_WITH_AES_256_GCM_SHA384, SSL_ALLOWED, PR_TRUE, PR_FALSE },
 
  /* ECDHE-PSK from [draft-mattsson-tls-ecdhe-psk-aead]. We only enable PSK if we
   * are doing TLS 1.3 PSK-resumption.
@@ -195,11 +199,6 @@ static ssl3CipherSuiteCfg cipherSuites[ssl_V3_SUITES_IMPLEMENTED] = {
  { TLS_RSA_WITH_NULL_SHA,                   SSL_ALLOWED, PR_FALSE, PR_FALSE},
  { TLS_RSA_WITH_NULL_SHA256,                SSL_ALLOWED, PR_FALSE, PR_FALSE},
  { TLS_RSA_WITH_NULL_MD5,                   SSL_ALLOWED, PR_FALSE, PR_FALSE},
-
- /* Special TLS 1.3 AEAD-only suites. */
- { TLS13_STAR_WITH_AES_128_GCM_SHA256, SSL_ALLOWED, PR_TRUE, PR_FALSE },
- { TLS13_STAR_WITH_CHACHA20_POLY1305_SHA256, SSL_ALLOWED, PR_TRUE, PR_FALSE },
- { TLS13_STAR_WITH_AES_256_GCM_SHA384, SSL_ALLOWED, PR_TRUE, PR_FALSE },
 };
 /* clang-format on */
 
@@ -349,6 +348,7 @@ static const ssl3KEADef kea_defs[] =
     {kea_ecdh_anon,      ssl_kea_ecdh, ssl_sign_null, ssl_auth_null, PR_FALSE,   0, PR_FALSE, PR_TRUE,  SEC_OID_TLS_ECDH_ANON},
     {kea_ecdhe_psk,      ssl_kea_ecdh_psk, ssl_sign_null, ssl_auth_psk, PR_FALSE, 0, PR_FALSE, PR_TRUE, SEC_OID_TLS_ECDHE_PSK},
     {kea_dhe_psk,      ssl_kea_dh_psk, ssl_sign_null, ssl_auth_psk, PR_FALSE, 0, PR_FALSE, PR_TRUE, SEC_OID_TLS_DHE_PSK},
+   {kea_tls13_any,      ssl_kea_tls13_any, ssl_sign_null, ssl_auth_null, PR_FALSE, 0, PR_FALSE, PR_TRUE, SEC_OID_TLS13_ANY},
 };
 
 /* must use ssl_LookupCipherSuiteDef to access */
@@ -498,10 +498,9 @@ static const ssl3CipherSuiteDef cipher_suite_defs[] =
     {TLS_DHE_PSK_WITH_CHACHA20_POLY1305_SHA256, cipher_chacha20, mac_aead, kea_dhe_psk, ssl_hash_sha256},
     {TLS_DHE_PSK_WITH_AES_256_GCM_SHA384, cipher_aes_256_gcm, mac_aead, kea_dhe_psk, ssl_hash_sha384},
 
-    {TLS13_STAR_WITH_AES_128_GCM_SHA256, cipher_aes_128_gcm, mac_aead, kea_ecdhe_ecdsa, ssl_hash_sha256},
-    {TLS13_STAR_WITH_CHACHA20_POLY1305_SHA256, cipher_chacha20, mac_aead, kea_ecdhe_ecdsa, ssl_hash_sha256},
-    {TLS13_STAR_WITH_AES_256_GCM_SHA384, cipher_aes_256_gcm, mac_aead, kea_ecdhe_ecdsa, ssl_hash_sha384},
-
+    {TLS13_STAR_WITH_AES_128_GCM_SHA256, cipher_aes_128_gcm, mac_aead, kea_tls13_any, ssl_hash_sha256},
+    {TLS13_STAR_WITH_CHACHA20_POLY1305_SHA256, cipher_chacha20, mac_aead, kea_tls13_any, ssl_hash_sha256},
+    {TLS13_STAR_WITH_AES_256_GCM_SHA384, cipher_aes_256_gcm, mac_aead, kea_tls13_any, ssl_hash_sha384},
 };
 /* clang-format on */
 
@@ -526,7 +525,8 @@ static const CK_MECHANISM_TYPE kea_alg_defs[] = {
     CKM_INVALID_MECHANISM, /* ssl_kea_fortezza (unused) */
     CKM_ECDH1_DERIVE,      /* ssl_kea_ecdh */
     CKM_ECDH1_DERIVE,      /* ssl_kea_ecdh_psk */
-    CKM_DH_PKCS_DERIVE     /* ssl_kea_dh_psk */
+    CKM_DH_PKCS_DERIVE,    /* ssl_kea_dh_psk */
+    CKM_INVALID_MECHANISM, /* ssl_tls13_any */
 };
 PR_STATIC_ASSERT(PR_ARRAY_SIZE(kea_alg_defs) == ssl_kea_size);
 
@@ -918,6 +918,8 @@ ssl_KEAEnabled(const sslSocket *ss, SSLKEAType keaType)
         case ssl_kea_ecdh:
         case ssl_kea_ecdh_psk:
             return ssl_NamedGroupTypeEnabled(ss, group_type_ec);
+        case ssl_kea_tls13_any:
+            return PR_TRUE;
 
         case ssl_kea_fortezza:
         default:
@@ -1020,6 +1022,7 @@ ssl3_config_match_init(sslSocket *ss)
 
             keaType = kea_defs[cipher_def->key_exchange_alg].exchKeyType;
             if (keaType != ssl_kea_null &&
+                keaType != ssl_kea_tls13_any &&
                 !PK11_TokenExists(kea_alg_defs[keaType])) {
                 suite->isPresent = PR_FALSE;
             }
@@ -1050,6 +1053,9 @@ config_match(ssl3CipherSuiteCfg *suite, int policy,
 {
     const ssl3CipherSuiteDef *cipher_def;
     const ssl3KEADef *kea_def;
+    if (suite->cipher_suite == TLS13_STAR_WITH_AES_128_GCM_SHA256) {
+        SSL_TRC(3, ("TLS13_STAR_WITH_AES_128_GCM_SHA256"));
+    }
 
     PORT_Assert(policy != SSL_NOT_ALLOWED);
     if (policy == SSL_NOT_ALLOWED)
@@ -1057,7 +1063,6 @@ config_match(ssl3CipherSuiteCfg *suite, int policy,
 
     if (!suite->enabled || !suite->isPresent)
         return PR_FALSE;
-
     if ((suite->policy == SSL_NOT_ALLOWED) ||
         (suite->policy > policy))
         return PR_FALSE;
@@ -1707,7 +1712,7 @@ ssl3_SetupPendingCipherSpec(sslSocket *ss)
         mac += 2;
 
     ss->ssl3.hs.suite_def = suite_def;
-    ss->ssl3.hs.kea_def = &kea_defs[kea];
+    ss->ssl3.hs.kea_def = (ssl3KEADef *)(&kea_defs[kea]);
     PORT_Assert(ss->ssl3.hs.kea_def->kea == kea);
 
     pwSpec->cipher_def = &bulk_cipher_defs[cipher];
@@ -6994,7 +6999,7 @@ loser:
     return rv; /* err code already set. */
 }
 
-static SECStatus
+SECStatus
 ssl3_PickSignatureScheme(sslSocket *ss, SECKEYPublicKey *key,
                          SignatureScheme *peerSchemes,
                          unsigned int peerSchemeCount,
@@ -7062,14 +7067,6 @@ ssl3_PickServerSignatureScheme(sslSocket *ss)
     SECStatus rv;
 
     if (ss->ssl3.hs.numClientSigScheme == 0) {
-        if (ss->version >= SSL_LIBRARY_VERSION_TLS_1_3) {
-            /* TODO test what happens when we strip signature_algorithms... this
-             might not be needed */
-            (void)SSL3_SendAlert(ss, alert_fatal, missing_extension);
-            PORT_SetError(SSL_ERROR_RX_MALFORMED_CLIENT_HELLO);
-            return SECFailure;
-        }
-
         /* If the client didn't provide any signature_algorithms extension then
          * we can assume that they support SHA-1: RFC5246, Section 7.4.1.4.1 */
         switch (keyPair->pubKey->keyType) {
@@ -7255,7 +7252,7 @@ ssl3_SetCipherSuite(sslSocket *ss, ssl3CipherSuite chosenSuite,
         return SECFailure;
     }
 
-    ss->ssl3.hs.kea_def = &kea_defs[ss->ssl3.hs.suite_def->key_exchange_alg];
+    ss->ssl3.hs.kea_def = (ssl3KEADef *)&kea_defs[ss->ssl3.hs.suite_def->key_exchange_alg];
     ss->ssl3.hs.preliminaryInfo |= ssl_preinfo_cipher_suite;
 
     if (!initHashes) {

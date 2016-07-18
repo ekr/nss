@@ -45,6 +45,7 @@ typedef enum {
     ssl_kea_ecdh = 4,
     ssl_kea_ecdh_psk = 5,
     ssl_kea_dh_psk = 6,
+    ssl_kea_tls13_any = 7,
     ssl_kea_size /* number of ssl_kea_ algorithms */
 } SSLKEAType;
 

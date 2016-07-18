@@ -1729,6 +1729,8 @@ const static SECOidData oids[SEC_OID_TOTAL] = {
          "TLS FFDHE 8192-bit key exchange", CKM_INVALID_MECHANISM, INVALID_CERT_EXTENSION ),
     ODE( SEC_OID_TLS_DHE_CUSTOM,
          "TLS DHE custom group key exchange", CKM_INVALID_MECHANISM, INVALID_CERT_EXTENSION ),
+    ODE( SEC_OID_TLS13_ANY,
+         "TLS 1.3 fake key exchange", CKM_INVALID_MECHANISM, INVALID_CERT_EXTENSION ),
 
 };
 
