@@ -2614,6 +2614,68 @@ done:
     return rv;
 }
 
+static SECStatus
+tls13_CheckSignatureSchemeForKey(sslSocket *ss,
+                                 SignatureScheme scheme,
+                                 CERTCertificate *cert)
+{
+    SSLSignType keySigAlg;
+    unsigned int i;
+    const namedGroupDef *group = NULL;
+    SECKEYPublicKey *key;
+
+    /* Validate that we accept this algorithm. */
+    for (i = 0; i < ss->ssl3.signatureSchemeCount; ++i) {
+        if (scheme == ss->ssl3.signatureSchemes[i]) {
+            return SECSuccess;
+        }
+    }
+    FATAL_ERROR(ss, SSL_ERROR_UNSUPPORTED_SIGNATURE_ALGORITHM,
+                decrypt_error);
+
+    key = CERT_ExtractPublicKey(cert);
+    if (key == NULL) {
+        ssl_MapLowLevelError(SSL_ERROR_EXTRACT_PUBLIC_KEY_FAILURE);
+        return SECFailure;
+    }
+    keySigAlg = ssl3_SignTypeForKey(key);
+
+    if (keySigAlg != ssl_sign_ecdsa) {
+        SECKEY_DestroyPublicKey(key);
+        return SECSuccess;
+    }
+
+    group = ssl_ECPubKey2NamedGroup(key);
+    SECKEY_DestroyPublicKey(key);
+    if (!group) {
+        FATAL_ERROR(ss, SSL_ERROR_RX_MALFORMED_CERT_VERIFY,
+                    illegal_parameter);
+        return SECFailure;
+    }
+
+    switch (group->name) {
+        case ec_secp256r1:
+            if (scheme == ssl_sig_ecdsa_secp256r1_sha256)
+                return SECSuccess;
+            break;
+        case ec_secp384r1:
+            if (scheme == ssl_sig_ecdsa_secp384r1_sha384)
+                return SECSuccess;
+            break;
+        case ec_secp521r1:
+            if (scheme == ssl_sig_ecdsa_secp521r1_sha512)
+                return SECSuccess;
+            break;
+        default:
+            PORT_Assert(0);
+            break;
+    }
+
+    FATAL_ERROR(ss, SSL_ERROR_UNSUPPORTED_SIGNATURE_ALGORITHM,
+                decrypt_error);
+    return SECFailure;
+}
+
 /* Called from tls13_CompleteHandleHandshakeMessage() when it has deciphered a complete
  * tls13 CertificateVerify message
  * Caller must hold Handshake and RecvBuf locks.
@@ -2646,9 +2708,9 @@ tls13_HandleCertificateVerify(sslSocket *ss, SSL3Opaque *b, PRUint32 length,
         return SECFailure;
     }
 
-    rv = ssl3_CheckSignatureSchemeConsistency(ss, sigScheme, ss->sec.peerCert);
+    rv = tls13_CheckSignatureSchemeForKey(ss, sigScheme, ss->sec.peerCert);
     if (rv != SECSuccess) {
-        FATAL_ERROR(ss, SSL_ERROR_RX_MALFORMED_CERT_VERIFY, decrypt_error);
+        /* Error set already */
         return SECFailure;
     }
     hashAlg = ssl3_SignatureSchemeToHashType(sigScheme);
