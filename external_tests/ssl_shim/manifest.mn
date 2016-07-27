@@ -16,3 +16,4 @@ PROGRAM = ssl_shim
 EXTRA_LIBS = $(DIST)/lib/$(LIB_PREFIX)softokn.$(LIB_SUFFIX)
 
 USE_STATIC_LIBS = 1
+MKPROG = $(CCC)

@@ -5,6 +5,19 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 
+#include "config.h"
+
+#include <cstdlib>
+#include <iostream>
+
 int main(int argc, char **argv) {
-    exit(0);
+  Config cfg;
+
+  auto f1 = cfg.ConfigGet("flag1", int);
+  std::cerr << "flag1 " << f1 << std::endl;
+
+  auto f2  = cfg.ConfigGet("flag2", int);
+  std::cerr << "flag1 " << f2 << std::endl;
+
+  exit(0);
 }
