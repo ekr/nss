@@ -7,6 +7,7 @@ DEPTH      = ../..
 MODULE = nss
 
 CPPSRCS = \
+      config.cc \
       ssl_shim.cc \
       $(NULL)
 
