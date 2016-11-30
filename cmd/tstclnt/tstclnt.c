@@ -914,10 +914,15 @@ PRBool requestSent = PR_FALSE;
 PRBool enableZeroRtt = PR_FALSE;
 
 static int
-writeBytesToServer(PRFileDesc *s, PRPollDesc *pollset, const char *buf, int nb)
+writeBytesToServer(PRFileDesc *s, const char *buf, int nb)
 {
     SECStatus rv;
     const char *bufp = buf;
+    PRPollDesc pollset[1];
+
+    pollset[SSOCK_FD].in_flags = PR_POLL_WRITE | PR_POLL_EXCEPT;
+    pollset[SSOCK_FD].out_flags = 0;
+    pollset[SSOCK_FD].fd = s;
 
     FPRINTF(stderr, "%s: Writing %d bytes to server\n",
             progName, nb);
@@ -979,11 +984,6 @@ handshakeCallback(PRFileDesc *fd, void *client_data)
         /* This data was sent in 0-RTT. */
         SSLChannelInfo info;
         SECStatus rv;
-        PRPollDesc pollset[1];
-
-        pollset[SSOCK_FD].in_flags = PR_POLL_WRITE | PR_POLL_EXCEPT;
-        pollset[SSOCK_FD].out_flags = 0;
-        pollset[SSOCK_FD].fd = fd;
 
         rv = SSL_GetChannelInfo(fd, &info, sizeof(info));
         if (rv != SECSuccess)
@@ -991,7 +991,7 @@ handshakeCallback(PRFileDesc *fd, void *client_data)
 
         if (!info.earlyDataAccepted) {
             FPRINTF(stderr, "Early data rejected. Re-sending\n");
-            writeBytesToServer(fd, pollset, requestString, requestStringLen);
+            writeBytesToServer(fd, requestString, requestStringLen);
         }
     }
 }
@@ -1358,8 +1358,7 @@ run_client(void)
                     progName, pollset[SSOCK_FD].out_flags);
         }
         if (REQUEST_WAITING) {
-            error = writeBytesToServer(s, pollset,
-                                       requestString, requestStringLen);
+            error = writeBytesToServer(s, requestString, requestStringLen);
             if (error) {
                 goto done;
             }
@@ -1380,7 +1379,7 @@ run_client(void)
                 /* EOF on stdin, stop polling stdin for read. */
                 pollset[STDIN_FD].in_flags = 0;
             } else {
-                error = writeBytesToServer(s, pollset, buf, nb);
+                error = writeBytesToServer(s, buf, nb);
                 if (error) {
                     goto done;
                 }
