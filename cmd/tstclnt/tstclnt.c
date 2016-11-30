@@ -169,19 +169,6 @@ printSecurityInfo(PRFileDesc *fd)
     }
 }
 
-void
-handshakeCallback(PRFileDesc *fd, void *client_data)
-{
-    const char *secondHandshakeName = (char *)client_data;
-    if (secondHandshakeName) {
-        SSL_SetURL(fd, secondHandshakeName);
-    }
-    printSecurityInfo(fd);
-    if (renegotiationsDone < renegotiationsToDo) {
-        SSL_ReHandshake(fd, (renegotiationsToDo < 2));
-        ++renegotiationsDone;
-    }
-}
 
 static void
 PrintUsageHeader(const char *progName)
@@ -922,6 +909,7 @@ char *hs2SniHostName = NULL;
 PRUint16 portno = 443;
 int override = 0;
 char *requestString = NULL;
+char *requestStringInt;
 PRInt32 requestStringLen = 0;
 PRBool enableZeroRtt = PR_FALSE;
 
@@ -975,6 +963,39 @@ writeBytesToServer(PRFileDesc *s, PRPollDesc *pollset, const char *buf, int nb)
     return 0;
 }
 
+void
+handshakeCallback(PRFileDesc *fd, void *client_data)
+{
+    const char *secondHandshakeName = (char *)client_data;
+    if (secondHandshakeName) {
+        SSL_SetURL(fd, secondHandshakeName);
+    }
+    printSecurityInfo(fd);
+    if (renegotiationsDone < renegotiationsToDo) {
+        SSL_ReHandshake(fd, (renegotiationsToDo < 2));
+        ++renegotiationsDone;
+    }
+    if (requestString && !requestStringInt) {
+        /* This data was sent in 0-RTT. */
+        SSLChannelInfo info;
+        SECStatus rv;
+        PRPollDesc pollset[1];
+
+        pollset[SSOCK_FD].in_flags = PR_POLL_WRITE | PR_POLL_EXCEPT;
+        pollset[SSOCK_FD].out_flags = 0;
+        pollset[SSOCK_FD].fd = fd;
+
+        rv = SSL_GetChannelInfo(fd, &info, sizeof(info));
+        if (rv != SECSuccess)
+            return;
+
+        if (!info.earlyDataAccepted) {
+            PRINTF("Early data rejected. Re-sending\n");
+            writeBytesToServer(fd, pollset, requestString, requestStringLen);
+        }
+    }
+}
+
 static int
 run_client(void)
 {
@@ -988,7 +1009,7 @@ run_client(void)
     PRFileDesc *std_out;
     PRPollDesc pollset[2];
     PRBool wrStarted = PR_FALSE;
-    char *requestStringInt = requestString;
+    requestStringInt = requestString;
 
     /* Create socket */
     s = PR_OpenTCPSocket(addr.raw.family);
