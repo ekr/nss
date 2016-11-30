@@ -909,8 +909,8 @@ char *hs2SniHostName = NULL;
 PRUint16 portno = 443;
 int override = 0;
 char *requestString = NULL;
-char *requestStringInt;
 PRInt32 requestStringLen = 0;
+PRBool requestSent = PR_FALSE;
 PRBool enableZeroRtt = PR_FALSE;
 
 static int
@@ -975,7 +975,7 @@ handshakeCallback(PRFileDesc *fd, void *client_data)
         SSL_ReHandshake(fd, (renegotiationsToDo < 2));
         ++renegotiationsDone;
     }
-    if (requestString && !requestStringInt) {
+    if (requestString && requestSent) {
         /* This data was sent in 0-RTT. */
         SSLChannelInfo info;
         SECStatus rv;
@@ -990,11 +990,13 @@ handshakeCallback(PRFileDesc *fd, void *client_data)
             return;
 
         if (!info.earlyDataAccepted) {
-            PRINTF("Early data rejected. Re-sending\n");
+            FPRINTF(stderr, "Early data rejected. Re-sending\n");
             writeBytesToServer(fd, pollset, requestString, requestStringLen);
         }
     }
 }
+
+#define REQUEST_WAITING (requestString && !requestSent)
 
 static int
 run_client(void)
@@ -1009,7 +1011,8 @@ run_client(void)
     PRFileDesc *std_out;
     PRPollDesc pollset[2];
     PRBool wrStarted = PR_FALSE;
-    requestStringInt = requestString;
+
+    requestSent = PR_FALSE;
 
     /* Create socket */
     s = PR_OpenTCPSocket(addr.raw.family);
@@ -1266,7 +1269,7 @@ run_client(void)
     pollset[SSOCK_FD].in_flags = PR_POLL_EXCEPT |
                                  (clientSpeaksFirst ? 0 : PR_POLL_READ);
     pollset[STDIN_FD].fd = PR_GetSpecialFD(PR_StandardInput);
-    if (!requestStringInt) {
+    if (!REQUEST_WAITING) {
         pollset[STDIN_FD].in_flags = PR_POLL_READ;
         npds = 2;
     } else {
@@ -1316,7 +1319,7 @@ run_client(void)
     */
     FPRINTF(stderr, "%s: ready...\n", progName);
     while ((pollset[SSOCK_FD].in_flags | pollset[STDIN_FD].in_flags) ||
-           requestStringInt) {
+           REQUEST_WAITING) {
         char buf[4000]; /* buffer for stdin */
         int nb;         /* num bytes read from stdin. */
 
@@ -1354,13 +1357,13 @@ run_client(void)
                     "%s: PR_Poll returned 0x%02x for socket out_flags.\n",
                     progName, pollset[SSOCK_FD].out_flags);
         }
-        if (requestStringInt) {
+        if (REQUEST_WAITING) {
             error = writeBytesToServer(s, pollset,
-                                       requestStringInt, requestStringLen);
+                                       requestString, requestStringLen);
             if (error) {
                 goto done;
             }
-            requestStringInt = NULL;
+            requestSent = PR_TRUE;
             pollset[SSOCK_FD].in_flags = PR_POLL_READ;
         }
         if (pollset[STDIN_FD].out_flags & PR_POLL_READ) {
