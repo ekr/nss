@@ -1465,10 +1465,34 @@ loser:
     return SECFailure;
 }
 
+static unsigned int
+tls13_GetHrrCookieLength(sslSocket *ss)
+{
+    return 16;
+}
+
+static SECStatus
+tls13_GetHrrCookie(sslSocket *ss,
+                   PRUint8 *buf, unsigned int *len, unsigned int maxlen)
+{
+    if (maxlen < 16) {
+        PORT_Assert(0);
+        PORT_SetError(SEC_ERROR_INVALID_ARGS);
+        return SECFailure;
+    }
+
+    PORT_Memset(buf, 0xff, 16);
+    *len = 16;
+
+    return SECSuccess;
+}
+
 static SECStatus
 tls13_SendHelloRetryRequest(sslSocket *ss, const sslNamedGroupDef *selectedGroup)
 {
     SECStatus rv;
+    unsigned int extensionLen;
+    unsigned int cookieLen;
 
     SSL_TRC(3, ("%d: TLS13[%d]: send hello retry request handshake",
                 SSL_GETPID(), ss->fd));
@@ -1482,12 +1506,18 @@ tls13_SendHelloRetryRequest(sslSocket *ss, const sslNamedGroupDef *selectedGroup
     }
 
     ssl_GetXmitBufLock(ss);
+    extensionLen =
+            2 + /* group extension id */
+            2 + /* group extension length */
+            2 /* group */;
+    cookieLen = tls13_GetHrrCookieLength(ss);
+    if (cookieLen) {
+        extensionLen += 2 + 2 + 2 + cookieLen;
+    }
     rv = ssl3_AppendHandshakeHeader(ss, hello_retry_request,
-                                    2 +     /* version */
-                                        2 + /* extension length */
-                                        2 + /* group extension id */
-                                        2 + /* group extension length */
-                                        2 /* group */);
+                                    2 + /* version */
+                                    2 + /* extension length */
+                                    extensionLen);
     if (rv != SECSuccess) {
         FATAL_ERROR(ss, SEC_ERROR_LIBRARY_FAILURE, internal_error);
         goto loser;
@@ -1501,7 +1531,7 @@ tls13_SendHelloRetryRequest(sslSocket *ss, const sslNamedGroupDef *selectedGroup
     }
 
     /* Length of extensions. */
-    rv = ssl3_AppendHandshakeNumber(ss, 2 + 2 + 2, 2);
+    rv = ssl3_AppendHandshakeNumber(ss, extensionLen, 2);
     if (rv != SECSuccess) {
         FATAL_ERROR(ss, SEC_ERROR_LIBRARY_FAILURE, internal_error);
         goto loser;
@@ -1523,6 +1553,37 @@ tls13_SendHelloRetryRequest(sslSocket *ss, const sslNamedGroupDef *selectedGroup
     if (rv != SECSuccess) {
         FATAL_ERROR(ss, SEC_ERROR_LIBRARY_FAILURE, internal_error);
         goto loser;
+    }
+
+    /* Cookie. */
+    if (cookieLen) {
+        PRUint8 cookie[512];
+        unsigned int tmp;
+
+        rv = tls13_GetHrrCookie(ss, cookie, &tmp, sizeof(cookie));
+        if (rv != SECSuccess) {
+            FATAL_ERROR(ss, SEC_ERROR_LIBRARY_FAILURE, internal_error);
+            goto loser;
+        }
+        PORT_Assert(tmp == cookieLen);
+
+        rv = ssl3_AppendHandshakeNumber(ss, ssl_tls13_cookie_xtn, 2);
+        if (rv != SECSuccess) {
+            FATAL_ERROR(ss, SEC_ERROR_LIBRARY_FAILURE, internal_error);
+            goto loser;
+        }
+
+        rv = ssl3_AppendHandshakeNumber(ss, 2 + cookieLen, 2);
+        if (rv != SECSuccess) {
+            FATAL_ERROR(ss, SEC_ERROR_LIBRARY_FAILURE, internal_error);
+            goto loser;
+        }
+
+        rv = ssl3_AppendHandshakeVariable(ss, cookie, cookieLen, 2);
+        if (rv != SECSuccess) {
+            FATAL_ERROR(ss, SEC_ERROR_LIBRARY_FAILURE, internal_error);
+            goto loser;
+        }
     }
 
     rv = ssl3_FlushHandshake(ss, 0);
