@@ -99,6 +99,8 @@ struct TLSExtensionDataStr {
     SECItem pskBinder;                /* The PSK binder for the first PSK (TLS 1.3) */
     unsigned long pskBinderPrefixLen; /* The length of the binder input. */
     PRCList remoteKeyShares;          /* The other side's public keys (TLS 1.3) */
+
+    SECItem cookie;                   /* On the server (TLS 1.3) */
 };
 
 typedef struct TLSExtensionStr {

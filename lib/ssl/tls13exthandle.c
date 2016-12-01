@@ -987,6 +987,38 @@ tls13_ClientSendHrrCookieXtn(const sslSocket *ss, TLSExtensionData *xtnData, PRB
     return extension_len;
 }
 
+SECStatus
+tls13_ServerHandleCookieXtn(const sslSocket *ss, TLSExtensionData *xtnData, PRUint16 ex_type,
+                               SECItem *data)
+{
+    SECStatus rv;
+
+    SSL_TRC(3, ("%d: TLS13[%d]: handle cookie extension",
+                SSL_GETPID(), ss->fd));
+
+    /* If we are doing < TLS 1.3, then ignore this. */
+    if (ss->version < SSL_LIBRARY_VERSION_TLS_1_3) {
+        PORT_SetError(SSL_ERROR_EXTENSION_DISALLOWED_FOR_VERSION);
+        return SECFailure;
+    }
+
+    rv = ssl3_ExtConsumeHandshakeVariable(ss, &xtnData->cookie, 2,
+                                       &data->data, &data->len);
+    if (rv != SECSuccess) {
+        return SECFailure;
+    }
+
+    if (data->len) {
+        PORT_SetError(SSL_ERROR_RX_MALFORMED_SERVER_HELLO);
+        return SECFailure;
+    }
+
+    /* Keep track of negotiated extensions. */
+    xtnData->negotiated[xtnData->numNegotiated++] = ex_type;
+
+    return SECSuccess;
+}
+
 /*
  *     enum { psk_ke(0), psk_dhe_ke(1), (255) } PskKeyExchangeMode;
  *

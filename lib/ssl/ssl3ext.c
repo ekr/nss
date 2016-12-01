@@ -39,6 +39,7 @@ static const ssl3ExtensionHandler clientHelloHandlers[] = {
     { ssl_tls13_early_data_xtn, &tls13_ServerHandleEarlyDataXtn },
     { ssl_tls13_psk_key_exchange_modes_xtn,
       &tls13_ServerHandlePskKeyExchangeModesXtn },
+    { ssl_tls13_cookie_xtn, &tls13_ServerHandleCookieXtn },
     { -1, NULL }
 };
 

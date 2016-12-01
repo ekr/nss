@@ -1277,10 +1277,17 @@ tls13_HandleClientHelloPart2(sslSocket *ss,
     }
     /* If we are going around again, then we should make sure that the cipher
      * suite selection doesn't change. That's a sign of client shennanigans. */
-    if (ss->ssl3.hs.helloRetry &&
-        ss->ssl3.hs.cipher_suite != previousCipherSuite) {
-        FATAL_ERROR(ss, SSL_ERROR_RX_MALFORMED_CLIENT_HELLO, handshake_failure);
-        goto loser;
+    if (ss->ssl3.hs.helloRetry) {
+        if (ss->ssl3.hs.cipher_suite != previousCipherSuite) {
+            FATAL_ERROR(ss, SSL_ERROR_RX_MALFORMED_CLIENT_HELLO, handshake_failure);
+            goto loser;
+        }
+        if (!ss->xtnData.cookie.len) {
+            FATAL_ERROR(ss, SSL_ERROR_RX_MALFORMED_CLIENT_HELLO, handshake_failure);
+            goto loser;
+        }
+        PRINT_BUF(50, (ss, "Client sent cookie",
+                       ss->xtnData.cookie.data, ss->xtnData.cookie.len));
     }
 
     /* Now create a synthetic kea_def that we can tweak. */

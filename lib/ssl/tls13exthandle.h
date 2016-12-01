@@ -64,5 +64,7 @@ PRInt32 tls13_ClientSendPskKeyExchangeModesXtn(const sslSocket *ss,
 SECStatus tls13_ServerHandlePskKeyExchangeModesXtn(const sslSocket *ss,
                                                    TLSExtensionData *xtnData,
                                                    PRUint16 ex_type, SECItem *data);
+SECStatus tls13_ServerHandleCookieXtn(const sslSocket *ss, TLSExtensionData *xtnData,
+                                      PRUint16 ex_type, SECItem *data);
 
 #endif
