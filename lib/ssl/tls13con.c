@@ -2959,6 +2959,7 @@ tls13_ComputeHandshakeHashes(sslSocket *ss,
         /* Backup: if we haven't done any hashing, then hash now.
          * This happens when we are doing 0-RTT on the client. */
         if (ss->ssl3.hs.recoveredHashState) {
+            // TODO(ekr@rtfm.com): Is this even needed?
             ctx = PK11_CloneContext(ss->ssl3.hs.recoveredHashState);
             if (!ctx) {
                 ssl_MapLowLevelError(SSL_ERROR_SHA_DIGEST_FAILURE);

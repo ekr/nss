@@ -4981,6 +4981,7 @@ ssl3_SendClientHello(sslSocket *ss, sslClientHelloType type)
     unsigned numCompressionMethods;
     PRUint16 version;
     PRInt32 flags;
+    unsigned int cookieLen = ss->ssl3.hs.cookie.len;
 
     SSL_TRC(3, ("%d: SSL3[%d]: send %s ClientHello handshake", SSL_GETPID(),
                 ss->fd, ssl_ClientHelloTypeName(type)));
@@ -4999,6 +5000,7 @@ ssl3_SendClientHello(sslSocket *ss, sslClientHelloType type)
      * to maintain the handshake hashes. */
     if (ss->ssl3.hs.helloRetry) {
         PORT_Assert(type == client_hello_retry);
+        cookieLen = 0;
     } else {
         rv = ssl3_InitState(ss);
         if (rv != SECSuccess) {
@@ -5277,7 +5279,7 @@ ssl3_SendClientHello(sslSocket *ss, sslClientHelloType type)
              2 + num_suites * sizeof(ssl3CipherSuite) +
              1 + numCompressionMethods + total_exten_len;
     if (IS_DTLS(ss)) {
-        length += 1 + ss->ssl3.hs.cookie.len;
+        length += 1 + cookieLen;
     }
 
     /* A padding extension may be included to ensure that the record containing
@@ -5357,7 +5359,7 @@ ssl3_SendClientHello(sslSocket *ss, sslClientHelloType type)
 
     if (IS_DTLS(ss)) {
         rv = ssl3_AppendHandshakeVariable(
-            ss, ss->ssl3.hs.cookie.data, ss->ssl3.hs.cookie.len, 1);
+            ss, ss->ssl3.hs.cookie.data, cookieLen, 1);
         if (rv != SECSuccess) {
             if (sid->u.ssl3.lock) {
                 PR_RWLock_Unlock(sid->u.ssl3.lock);
