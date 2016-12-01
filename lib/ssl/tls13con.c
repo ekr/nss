@@ -1472,28 +1472,66 @@ loser:
     return SECFailure;
 }
 
-static unsigned int
-tls13_GetHrrCookieLength(sslSocket *ss)
-{
-    return 16;
-}
 
 static SECStatus
 tls13_GetHrrCookie(sslSocket *ss,
                    PRUint8 *buf, unsigned int *len, unsigned int maxlen)
 {
-    if (maxlen < 16) {
-        PORT_Assert(0);
-        PORT_SetError(SEC_ERROR_INVALID_ARGS);
+    unsigned int buflen;
+    unsigned char *ret;
+    SECStatus rv;
+
+    PK11Context *ctx = PK11_CreateDigestContext(
+        ssl3_HashTypeToOID(tls13_GetHash(ss)));
+    if (!ctx) {
+        FATAL_ERROR(ss, SEC_ERROR_LIBRARY_FAILURE, internal_error);
+        return SECFailure;
+    }
+    rv = PK11_DigestBegin(ctx);
+    if (rv != SECSuccess) {
+        FATAL_ERROR(ss, SEC_ERROR_LIBRARY_FAILURE, internal_error);
+        return SECFailure;
+    }
+    rv = PK11_DigestOp(ctx, ss->ssl3.hs.messages.buf,
+                       ss->ssl3.hs.messages.len);
+    if (rv != SECSuccess) {
+        FATAL_ERROR(ss, SEC_ERROR_LIBRARY_FAILURE, internal_error);
         return SECFailure;
     }
 
-    PORT_Memset(buf, 0xff, 16);
-    *len = 16;
+    ret = PK11_SaveContextAlloc(ctx, NULL, 0, &buflen);
+    if (!ret) {
+        FATAL_ERROR(ss, SEC_ERROR_LIBRARY_FAILURE, internal_error);
+        return SECFailure;
+    }
+    PK11_DestroyContext(ctx, PR_TRUE);
+
+    if (buflen > maxlen) {
+        FATAL_ERROR(ss, SEC_ERROR_LIBRARY_FAILURE, internal_error);
+        return SECFailure;
+    }
+    PORT_Memcpy(buf, ret, buflen);
+    *len = buflen;
+    PORT_Free(ret);
 
     return SECSuccess;
 }
 
+
+/* Possibly the worst hack ever. */
+static unsigned int
+tls13_GetHrrCookieLength(sslSocket *ss)
+{
+    unsigned char buf[512];
+    unsigned int len;
+
+    SECStatus rv = tls13_GetHrrCookie(ss, buf, &len, sizeof (buf));
+    if (rv != SECSuccess) {
+        PORT_Assert(0);
+        return 0;
+    }
+    return len;
+}
 static SECStatus
 tls13_SendHelloRetryRequest(sslSocket *ss, const sslNamedGroupDef *selectedGroup)
 {
