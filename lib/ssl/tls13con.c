@@ -106,6 +106,9 @@ static SECStatus tls13_ComputeFinished(
     unsigned int maxOutputLen);
 static SECStatus tls13_SendClientSecondRound(sslSocket *ss);
 static SECStatus tls13_FinishHandshake(sslSocket *ss);
+static SECStatus tls13_RecoverHashState(sslSocket *ss,
+                                        unsigned char *cookie,
+                                        unsigned int cookieLen);
 
 const char kHkdfLabelClient[] = "client";
 const char kHkdfLabelServer[] = "server";
@@ -1288,6 +1291,11 @@ tls13_HandleClientHelloPart2(sslSocket *ss,
         }
         PRINT_BUF(50, (ss, "Client sent cookie",
                        ss->xtnData.cookie.data, ss->xtnData.cookie.len));
+
+        rv = tls13_RecoverHashState(ss, ss->xtnData.cookie.data, ss->xtnData.cookie.len);
+        if (rv != SECSuccess) {
+            goto loser;
+        }
     }
 
     /* Now create a synthetic kea_def that we can tweak. */
@@ -1532,6 +1540,58 @@ tls13_GetHrrCookieLength(sslSocket *ss)
     }
     return len;
 }
+
+/* Recover the hash state from the cookie.
+ *
+ * IMPORTANT: In a real implementation we would MAC the state. Right
+ * now we just trust it. DO NOT LAND.
+ */
+static SECStatus
+tls13_RecoverHashState(sslSocket *ss,
+                       unsigned char *cookie,
+                       unsigned int cookieLen)
+{
+    SECStatus rv;
+    PK11Context *ctx;
+    unsigned char prefix[6];
+    unsigned char *ptr = prefix;
+
+    PORT_Assert(!ss->ssl3.hs.recoveredHashState);
+    ctx = PK11_CreateDigestContext(
+        ssl3_HashTypeToOID(tls13_GetHash(ss)));
+    if (!ctx) {
+        FATAL_ERROR(ss, SEC_ERROR_LIBRARY_FAILURE, internal_error);
+        return SECFailure;
+    }
+
+    rv = PK11_RestoreContext(ctx, cookie, cookieLen);
+    if (rv != SECSuccess) {
+        FATAL_ERROR(ss, SSL_ERROR_RX_MALFORMED_CLIENT_HELLO, illegal_parameter);
+        goto loser;
+    }
+
+    ptr = ssl_EncodeUintX(ssl_tls13_cookie_xtn, 2, ptr);
+    ptr = ssl_EncodeUintX(2 + cookieLen, 2, ptr);
+    ptr = ssl_EncodeUintX(cookieLen, 2, ptr);
+
+    rv = PK11_DigestOp(ctx, prefix, sizeof(prefix));
+    if (rv != SECSuccess) {
+        FATAL_ERROR(ss, SEC_ERROR_LIBRARY_FAILURE, internal_error);
+        goto loser;
+    }
+    rv = PK11_DigestOp(ctx, cookie, cookieLen);
+    if (rv != SECSuccess) {
+        FATAL_ERROR(ss, SEC_ERROR_LIBRARY_FAILURE, internal_error);
+        goto loser;
+    }
+    ss->ssl3.hs.recoveredHashState = ctx;
+    return SECSuccess;
+
+loser:
+    PK11_DestroyContext(ctx, PR_TRUE);
+    return SECFailure;
+}
+
 static SECStatus
 tls13_SendHelloRetryRequest(sslSocket *ss, const sslNamedGroupDef *selectedGroup)
 {
@@ -1645,7 +1705,7 @@ tls13_SendHelloRetryRequest(sslSocket *ss, const sslNamedGroupDef *selectedGroup
         ss->ssl3.hs.zeroRttIgnore = ssl_0rtt_ignore_hrr;
     }
 
-    return SECSuccess;
+    return ssl3_RestartHandshakeHashes(ss);
 
 loser:
     ssl_ReleaseXmitBufLock(ss);
@@ -2898,15 +2958,23 @@ tls13_ComputeHandshakeHashes(sslSocket *ss,
     if (ss->ssl3.hs.hashType == handshake_hash_unknown) {
         /* Backup: if we haven't done any hashing, then hash now.
          * This happens when we are doing 0-RTT on the client. */
-        ctx = PK11_CreateDigestContext(ssl3_HashTypeToOID(tls13_GetHash(ss)));
-        if (!ctx) {
-            ssl_MapLowLevelError(SSL_ERROR_SHA_DIGEST_FAILURE);
-            return SECFailure;
-        }
+        if (ss->ssl3.hs.recoveredHashState) {
+            ctx = PK11_CloneContext(ss->ssl3.hs.recoveredHashState);
+            if (!ctx) {
+                ssl_MapLowLevelError(SSL_ERROR_SHA_DIGEST_FAILURE);
+                return SECFailure;
+            }
+        } else {
+            ctx = PK11_CreateDigestContext(ssl3_HashTypeToOID(tls13_GetHash(ss)));
+            if (!ctx) {
+                ssl_MapLowLevelError(SSL_ERROR_SHA_DIGEST_FAILURE);
+                return SECFailure;
+            }
 
-        if (PK11_DigestBegin(ctx) != SECSuccess) {
-            ssl_MapLowLevelError(SSL_ERROR_SHA_DIGEST_FAILURE);
-            goto loser;
+            if (PK11_DigestBegin(ctx) != SECSuccess) {
+                ssl_MapLowLevelError(SSL_ERROR_SHA_DIGEST_FAILURE);
+                goto loser;
+            }
         }
 
         PRINT_BUF(10, (NULL, "Handshake hash computed over saved messages",
@@ -2934,6 +3002,9 @@ tls13_ComputeHandshakeHashes(sslSocket *ss,
         ssl_MapLowLevelError(SSL_ERROR_DIGEST_FAILURE);
         goto loser;
     }
+
+    PRINT_BUF(10, (NULL, "Handshake hash",
+                   hashes->u.raw, hashes->len));
     PORT_Assert(hashes->len == tls13_GetHashSize(ss));
     PK11_DestroyContext(ctx, PR_TRUE);
 

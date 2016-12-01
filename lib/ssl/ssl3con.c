@@ -4019,17 +4019,24 @@ ssl3_InitHandshakeHashes(sslSocket *ss)
                 return SECFailure;
             }
 
-            ss->ssl3.hs.sha = PK11_CreateDigestContext(hash_oid->offset);
-            if (ss->ssl3.hs.sha == NULL) {
-                ssl_MapLowLevelError(SSL_ERROR_SHA_DIGEST_FAILURE);
-                return SECFailure;
+            if (ss->ssl3.hs.recoveredHashState) {
+                PORT_Assert(ss->ssl3.hs.helloRetry);
+                PORT_Assert(ss->sec.isServer);
+                ss->ssl3.hs.sha = ss->ssl3.hs.recoveredHashState;
+                ss->ssl3.hs.recoveredHashState = NULL;
+            } else {
+                ss->ssl3.hs.sha = PK11_CreateDigestContext(hash_oid->offset);
+
+                if (ss->ssl3.hs.sha == NULL) {
+                    ssl_MapLowLevelError(SSL_ERROR_SHA_DIGEST_FAILURE);
+                    return SECFailure;
+                }
+                if (PK11_DigestBegin(ss->ssl3.hs.sha) != SECSuccess) {
+                    ssl_MapLowLevelError(SSL_ERROR_DIGEST_FAILURE);
+                    return SECFailure;
+                }
             }
             ss->ssl3.hs.hashType = handshake_hash_single;
-
-            if (PK11_DigestBegin(ss->ssl3.hs.sha) != SECSuccess) {
-                ssl_MapLowLevelError(SSL_ERROR_DIGEST_FAILURE);
-                return SECFailure;
-            }
         } else {
             /* Both ss->ssl3.hs.md5 and ss->ssl3.hs.sha should be NULL or
              * created successfully. */
@@ -13279,7 +13286,8 @@ ssl3_DestroySSL3Info(sslSocket *ss)
     ss->ssl3.hs.zeroRttState = ssl_0rtt_none;
     /* Destroy TLS 1.3 buffered early data. */
     tls13_DestroyEarlyData(&ss->ssl3.hs.bufferedEarlyData);
-
+    if (ss->ssl3.hs.recoveredHashState)
+        PK11_DestroyContext(ss->ssl3.hs.recoveredHashState, PR_TRUE);
     ss->ssl3.initialized = PR_FALSE;
 
     SECITEM_FreeItem(&ss->xtnData.nextProto, PR_FALSE);

@@ -874,6 +874,7 @@ typedef struct SSL3HandshakeStateStr {
                                      * or received. */
     ssl3KEADef kea_def_mutable;     /* Used to hold the writable kea_def
                                      * we use for TLS 1.3 */
+    PK11Context *recoveredHashState; /* The hash state we recovered. */
 } SSL3HandshakeState;
 
 /*
