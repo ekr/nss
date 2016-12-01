@@ -988,19 +988,13 @@ tls13_ClientSendHrrCookieXtn(const sslSocket *ss, TLSExtensionData *xtnData, PRB
 }
 
 SECStatus
-tls13_ServerHandleCookieXtn(const sslSocket *ss, TLSExtensionData *xtnData, PRUint16 ex_type,
-                               SECItem *data)
+tls13_ServerHandleCookieXtn(const sslSocket *ss, TLSExtensionData *xtnData,
+                            PRUint16 ex_type, SECItem *data)
 {
     SECStatus rv;
 
     SSL_TRC(3, ("%d: TLS13[%d]: handle cookie extension",
                 SSL_GETPID(), ss->fd));
-
-    /* If we are doing < TLS 1.3, then ignore this. */
-    if (ss->version < SSL_LIBRARY_VERSION_TLS_1_3) {
-        PORT_SetError(SSL_ERROR_EXTENSION_DISALLOWED_FOR_VERSION);
-        return SECFailure;
-    }
 
     rv = ssl3_ExtConsumeHandshakeVariable(ss, &xtnData->cookie, 2,
                                        &data->data, &data->len);
