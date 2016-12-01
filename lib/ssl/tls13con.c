@@ -3495,28 +3495,54 @@ tls13_ComputePskBinderHash(sslSocket *ss, unsigned long prefixLength,
                            SSL3Hashes *hashes)
 {
     SECStatus rv;
-
+    PK11Context *ctx = NULL;
     PORT_Assert(ss->ssl3.hs.hashType == handshake_hash_unknown);
     PORT_Assert(ss->opt.noLocks || ssl_HaveSSL3HandshakeLock(ss));
     PORT_Assert(prefixLength <= ss->ssl3.hs.messages.len);
 
+    if (ss->ssl3.hs.recoveredHashState) {
+        ctx = PK11_CloneContext(ss->ssl3.hs.recoveredHashState);
+        if (!ctx) {
+            FATAL_ERROR(ss, SEC_ERROR_LIBRARY_FAILURE, internal_error);
+            goto loser;
+        }
+    } else {
+        ctx = PK11_CreateDigestContext(
+            ssl3_HashTypeToOID(tls13_GetHash(ss)));
+        if (!ctx) {
+            FATAL_ERROR(ss, SEC_ERROR_LIBRARY_FAILURE, internal_error);
+            goto loser;
+        }
+        rv = PK11_DigestBegin(ctx);
+        if (rv != SECSuccess) {
+            FATAL_ERROR(ss, SEC_ERROR_LIBRARY_FAILURE, internal_error);
+            goto loser;
+        }
+    }
     PRINT_BUF(10, (NULL, "Handshake hash computed over ClientHello prefix",
                    ss->ssl3.hs.messages.buf, prefixLength));
-    rv = PK11_HashBuf(ssl3_HashTypeToOID(tls13_GetHash(ss)),
-                      hashes->u.raw,
-                      ss->ssl3.hs.messages.buf, prefixLength);
+    rv = PK11_DigestOp(ctx, ss->ssl3.hs.messages.buf, prefixLength);
     if (rv != SECSuccess) {
-        ssl_MapLowLevelError(SSL_ERROR_SHA_DIGEST_FAILURE);
+        FATAL_ERROR(ss, SEC_ERROR_LIBRARY_FAILURE, internal_error);
         goto loser;
     }
-    hashes->len = tls13_GetHashSize(ss);
+    rv = PK11_DigestFinal(ctx, hashes->u.raw, &hashes->len, sizeof(hashes->u.raw));
+    if (rv != SECSuccess) {
+        FATAL_ERROR(ss, SEC_ERROR_LIBRARY_FAILURE, internal_error);
+        goto loser;
+    }
+    PORT_Assert(hashes->len == tls13_GetHashSize(ss));
 
     PRINT_BUF(10, (NULL, "PSK Binder hash",
                    hashes->u.raw, hashes->len));
 
+    PK11_DestroyContext(ctx, PR_TRUE);
     return SECSuccess;
 
 loser:
+    if (ctx) {
+        PK11_DestroyContext(ctx, PR_TRUE);
+    }
     return SECFailure;
 }
 /* Compute the PSK Binder This is kind of sneaky.*/
