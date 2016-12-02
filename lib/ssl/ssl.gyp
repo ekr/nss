@@ -41,6 +41,7 @@
         'sslver.c',
         'tls13con.c',
         'tls13exthandle.c',
+        'tls13hashstate.c',
         'tls13hkdf.c',
       ],
       'conditions': [

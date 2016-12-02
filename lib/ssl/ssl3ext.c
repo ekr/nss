@@ -14,6 +14,7 @@
 #include "sslimpl.h"
 #include "sslproto.h"
 #include "ssl3exthandle.h"
+#include "tls13err.h"
 #include "tls13exthandle.h"
 
 /* Table of handlers for received TLS hello extensions, one per extension.
