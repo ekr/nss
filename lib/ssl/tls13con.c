@@ -2829,26 +2829,18 @@ tls13_ComputeHandshakeHashes(sslSocket *ss,
 
     PORT_Assert(ss->opt.noLocks || ssl_HaveSSL3HandshakeLock(ss));
     if (ss->ssl3.hs.hashType == handshake_hash_unknown) {
+        PORT_Assert(!ss->ssl3.hs.recoveredHashState);
         /* Backup: if we haven't done any hashing, then hash now.
          * This happens when we are doing 0-RTT on the client. */
-        if (ss->ssl3.hs.recoveredHashState) {
-            // TODO(ekr@rtfm.com): Is this even needed?
-            ctx = PK11_CloneContext(ss->ssl3.hs.recoveredHashState);
-            if (!ctx) {
-                ssl_MapLowLevelError(SSL_ERROR_SHA_DIGEST_FAILURE);
-                return SECFailure;
-            }
-        } else {
-            ctx = PK11_CreateDigestContext(ssl3_HashTypeToOID(tls13_GetHash(ss)));
-            if (!ctx) {
-                ssl_MapLowLevelError(SSL_ERROR_SHA_DIGEST_FAILURE);
-                return SECFailure;
-            }
+        ctx = PK11_CreateDigestContext(ssl3_HashTypeToOID(tls13_GetHash(ss)));
+        if (!ctx) {
+            ssl_MapLowLevelError(SSL_ERROR_SHA_DIGEST_FAILURE);
+            return SECFailure;
+        }
 
-            if (PK11_DigestBegin(ctx) != SECSuccess) {
-                ssl_MapLowLevelError(SSL_ERROR_SHA_DIGEST_FAILURE);
-                goto loser;
-            }
+        if (PK11_DigestBegin(ctx) != SECSuccess) {
+            ssl_MapLowLevelError(SSL_ERROR_SHA_DIGEST_FAILURE);
+            goto loser;
         }
 
         PRINT_BUF(10, (NULL, "Handshake hash computed over saved messages",
