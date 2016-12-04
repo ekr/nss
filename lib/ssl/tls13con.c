@@ -1280,6 +1280,12 @@ tls13_HandleClientHelloPart2(sslSocket *ss,
         if (rv != SECSuccess) {
             goto loser;
         }
+    } else {
+        if (ss->xtnData.cookie.len) {
+            /* Client shouldn't be sending a cookie if we're not doing HRR. */
+            FATAL_ERROR(ss, SSL_ERROR_RX_MALFORMED_CLIENT_HELLO, handshake_failure);
+            goto loser;
+        }
     }
 
     /* Now create a synthetic kea_def that we can tweak. */
