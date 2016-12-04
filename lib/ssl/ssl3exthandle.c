@@ -796,9 +796,6 @@ ssl3_EncodeSessionTicket(sslSocket *ss,
     SECItem ms_item = { 0, NULL, 0 };
     PRUint32 cert_length = 0;
     PRUint32 now;
-    unsigned char *key_name;
-    PK11SymKey *aes_key = NULL;
-    PK11SymKey *mac_key = NULL;
     SECItem *srvName = NULL;
     PRUint32 srvNameLen = 0;
     CK_MECHANISM_TYPE msWrapMech = 0; /* dummy default value,
@@ -816,10 +813,6 @@ ssl3_EncodeSessionTicket(sslSocket *ss,
     if (ss->opt.requestCertificate && ss->sec.ci.sid->peerCert) {
         cert_length = 3 + ss->sec.ci.sid->peerCert->derCert.len;
     }
-
-    rv = ssl_GetSelfEncryptKeys(ss, &key_name, &aes_key, &mac_key);
-    if (rv != SECSuccess)
-        goto loser;
 
     if (ss->version >= SSL_LIBRARY_VERSION_TLS_1_3) {
         spec = ss->ssl3.cwSpec;
@@ -1038,16 +1031,18 @@ ssl3_EncodeSessionTicket(sslSocket *ss,
         goto loser;
     }
 
-    rv = ssl_SelfEncryptProtectInt(aes_key, mac_key, key_name,
-                         plaintext_item.data, plaintext_item.len,
-                         ticket_buf.data, &ticket_buf.len, ticket_buf.len);
+    /* Finally, encrypt the ticket. */
+    rv = ssl_SelfEncryptProtect(ss, plaintext_item.data, plaintext_item.len,
+                                ticket_buf.data, &ticket_buf.len, ticket_buf.len);
     if (rv != SECSuccess) {
         goto loser;
     }
 
     /* Give ownership of memory to caller. */
     *ticket_data = ticket_buf;
-    ticket_buf.data = NULL;
+
+    SECITEM_FreeItem(&plaintext_item, PR_FALSE);
+    return SECSuccess;
 
 loser:
     if (plaintext_item.data) {
@@ -1091,9 +1086,6 @@ ssl3_ProcessSessionTicketCommon(sslSocket *ss, SECItem *data)
     SECItem cert_item;
     PRUint32 nameType;
     SECItem alpn_item;
-    unsigned char *key_name;
-    PK11SymKey *aes_key = NULL;
-    PK11SymKey *mac_key = NULL;
 
     /* Turn off stateless session resumption if the client sends a
      * SessionTicket extension, even if the extension turns out to be
@@ -1111,17 +1103,9 @@ ssl3_ProcessSessionTicketCommon(sslSocket *ss, SECItem *data)
         goto loser;
     }
 
-    /* Get session ticket keys. */
-    rv = ssl_GetSelfEncryptKeys(ss, &key_name, &aes_key, &mac_key);
-    if (rv != SECSuccess) {
-        SSL_DBG(("%d: SSL[%d]: Unable to get/generate session ticket keys.",
-                 SSL_GETPID(), ss->fd));
-        goto loser;
-    }
-
-    rv = ssl_SelfEncryptUnprotectInt(aes_key, mac_key, key_name,
-                           data->data, data->len,
-                           buffer, &buffer_len, data->len);
+    /* Decrypt the ticket. */
+    rv = ssl_SelfEncryptUnprotect(ss, data->data, data->len,
+                                  buffer, &buffer_len, data->len);
     /* Treat all decryption failures as if there were no ticket.
      * TODO(ekr@rtfm.com): Should we be more aggressive about
      * failure here. */

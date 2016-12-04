@@ -324,3 +324,47 @@ ssl_SelfEncryptUnprotectInt(
 
     return SECSuccess;
 }
+
+SECStatus
+ssl_SelfEncryptProtect(
+    sslSocket *ss, const PRUint8 *in, unsigned int inLen,
+    PRUint8 *out, unsigned int *outLen, unsigned int maxOutLen)
+{
+    unsigned char *keyName;
+    PK11SymKey *encKey;
+    PK11SymKey *macKey;
+    SECStatus rv;
+
+    /* Get session ticket keys. */
+    rv = ssl_GetSelfEncryptKeys(ss, &keyName, &encKey, &macKey);
+    if (rv != SECSuccess) {
+        SSL_DBG(("%d: SSL[%d]: Unable to get/generate self-encrypt keys.",
+                 SSL_GETPID(), ss->fd));
+        return SECFailure;
+    }
+
+    return ssl_SelfEncryptProtectInt(encKey, macKey, keyName,
+                                     in, inLen, out, outLen, maxOutLen);
+}
+
+SECStatus
+ssl_SelfEncryptUnprotect(
+    sslSocket *ss, const PRUint8 *in, unsigned int inLen,
+    PRUint8 *out, unsigned int *outLen, unsigned int maxOutLen)
+{
+    unsigned char *keyName;
+    PK11SymKey *encKey;
+    PK11SymKey *macKey;
+    SECStatus rv;
+
+    /* Get session ticket keys. */
+    rv = ssl_GetSelfEncryptKeys(ss, &keyName, &encKey, &macKey);
+    if (rv != SECSuccess) {
+        SSL_DBG(("%d: SSL[%d]: Unable to get/generate self-encrypt keys.",
+                 SSL_GETPID(), ss->fd));
+        return SECFailure;
+    }
+
+    return ssl_SelfEncryptUnprotectInt(encKey, macKey, keyName,
+                                       in, inLen, out, outLen, maxOutLen);
+}
