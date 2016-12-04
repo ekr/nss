@@ -23,8 +23,8 @@ SECStatus ssl_SelfEncryptProtect(
 SECStatus ssl_SelfEncryptUnprotect(
     sslSocket *ss, const PRUint8 *in, unsigned int inLen,
     PRUint8 *out, unsigned int *outLen, unsigned int maxOutLen);
-
-
+SECStatus ssl_SelfEncryptGetProtectedSize(unsigned int inLen,
+                                          unsigned int *outLen);
 
 /* Exported for use in unit tests.*/
 SECStatus ssl_GetSelfEncryptKeys(sslSocket *ss,

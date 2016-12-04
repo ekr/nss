@@ -7,12 +7,25 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "pk11func.h"
+#include "selfencrypt.h"
 #include "ssl.h"
 #include "sslt.h"
+#include "ssl3encode.h"
 #include "sslimpl.h"
+#include "tls13con.h"
 #include "tls13err.h"
 #include "tls13hashstate.h"
 
+/*
+ * The cookie is structured as a self-encrypted structure with the
+ * inner value being.
+ *
+ * struct {
+ *     uint8 indicator = 0xff;  // To disambiguate from tickets.
+ *     uint8 hash;              // The hash function (ssl_auth_type)
+ *     opaque state<0..2^16>;   // The hash state.
+ * } CookieInner;
+ */
 SECStatus
 tls13_GetHrrCookie(sslSocket *ss,
                    PRUint8 *buf, unsigned int *len, unsigned int maxlen)
@@ -20,8 +33,30 @@ tls13_GetHrrCookie(sslSocket *ss,
     unsigned int buflen;
     unsigned char *ret;
     SECStatus rv;
+    PK11Context *ctx;
+    PRUint8 encodedCookie[1024];  /* Larger than the maximum size. */
+    SECItem cookieItem = { siBuffer, encodedCookie, sizeof(encodedCookie) };
+#ifdef DEBUG
+    unsigned int expectedLen;
 
-    PK11Context *ctx = PK11_CreateDigestContext(
+    rv = tls13_GetHrrCookieLength(ss, &expectedLen);
+    if (rv != SECSuccess) {
+        return SECFailure;
+    }
+#endif
+
+    /* Encode header. */
+    rv = ssl3_AppendNumberToItem(&cookieItem, 0xff, 1);
+    if (rv != SECSuccess) {
+        return SECFailure;
+    }
+    rv = ssl3_AppendNumberToItem(&cookieItem, tls13_GetHash(ss), 1);
+    if (rv != SECSuccess) {
+        return SECFailure;
+    }
+
+    /* Export the hash. */
+    ctx = PK11_CreateDigestContext(
         ssl3_HashTypeToOID(tls13_GetHash(ss)));
     if (!ctx) {
         FATAL_ERROR(ss, SEC_ERROR_LIBRARY_FAILURE, internal_error);
@@ -46,31 +81,56 @@ tls13_GetHrrCookie(sslSocket *ss,
     }
     PK11_DestroyContext(ctx, PR_TRUE);
 
-    if (buflen > maxlen) {
-        FATAL_ERROR(ss, SEC_ERROR_LIBRARY_FAILURE, internal_error);
+    /* Encode the rest of the cookie. */
+    rv = ssl3_AppendNumberToItem(&cookieItem, buflen, 2);
+    if (rv != SECSuccess) {
+        PORT_Free(ret);
         return SECFailure;
     }
-    PORT_Memcpy(buf, ret, buflen);
-    *len = buflen;
+    rv = ssl3_AppendToItem(&cookieItem, ret, buflen);
     PORT_Free(ret);
+    if (rv != SECSuccess) {
+        return SECFailure;
+    }
+
+    /* Encrypt right into the buffer. */
+    rv = ssl_SelfEncryptProtect(ss,
+                                encodedCookie, cookieItem.data - encodedCookie,
+                                buf, len, maxlen);
+    if (rv != SECSuccess) {
+        return SECFailure;
+    }
+
+#ifdef DEBUG
+    PORT_Assert(expectedLen = *len);
+
+#endif
 
     return SECSuccess;
 }
 
 
-/* Possibly the worst hack ever. */
-unsigned int
-tls13_GetHrrCookieLength(sslSocket *ss)
+/* This is unfortunate, but we need the hash size because it's
+ * included in the header which is in the prefix. */
+SECStatus
+tls13_GetHrrCookieLength(sslSocket *ss, unsigned int *length)
 {
-    unsigned char buf[512];
     unsigned int len;
 
-    SECStatus rv = tls13_GetHrrCookie(ss, buf, &len, sizeof (buf));
-    if (rv != SECSuccess) {
-        PORT_Assert(0);
-        return 0;
+    switch (tls13_GetHash(ss)) {
+        case ssl_hash_sha256:
+            len = 308;
+        case ssl_hash_sha384:
+            len = 724;
+        default:
+            PORT_Assert(0);
+            PORT_SetError(SEC_ERROR_INVALID_ARGS);
+            return SECFailure;
     }
-    return len;
+
+    len += 1 + 1 + 2;  /* Indicator + hash + length */
+
+    return ssl_SelfEncryptGetProtectedSize(len, length);
 }
 
 /* Recover the hash state from the cookie.

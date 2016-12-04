@@ -15,7 +15,7 @@
 
 SECStatus tls13_GetHrrCookie(
     sslSocket *ss, PRUint8 *buf, unsigned int *len, unsigned int maxlen);
-unsigned int tls13_GetHrrCookieLength(sslSocket *ss);
+SECStatus tls13_GetHrrCookieLength(sslSocket *ss, unsigned int *length);
 SECStatus tls13_RecoverHashState(sslSocket *ss,
                                  unsigned char *cookie,
                                  unsigned int cookieLen);
