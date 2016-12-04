@@ -1038,7 +1038,7 @@ ssl3_EncodeSessionTicket(sslSocket *ss,
         goto loser;
     }
 
-    rv = ssl_SelfProtect(aes_key, mac_key, key_name,
+    rv = ssl_SelfEncryptProtectInt(aes_key, mac_key, key_name,
                          plaintext_item.data, plaintext_item.len,
                          ticket_buf.data, &ticket_buf.len, ticket_buf.len);
     if (rv != SECSuccess) {
@@ -1119,7 +1119,7 @@ ssl3_ProcessSessionTicketCommon(sslSocket *ss, SECItem *data)
         goto loser;
     }
 
-    rv = ssl_SelfUnprotect(aes_key, mac_key, key_name,
+    rv = ssl_SelfEncryptUnprotectInt(aes_key, mac_key, key_name,
                            data->data, data->len,
                            buffer, &buffer_len, data->len);
     /* Treat all decryption failures as if there were no ticket.

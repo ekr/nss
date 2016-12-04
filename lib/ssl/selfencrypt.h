@@ -24,11 +24,11 @@ SECStatus ssl_GetSelfEncryptKeys(sslSocket *ss,
 /* Exported for use in unit tests.*/
 SECStatus ssl_SelfEncryptShutdown(void *appData, void *nssData);
 
-SECStatus ssl_SelfProtect(
+SECStatus ssl_SelfEncryptProtectInt(
     PK11SymKey *encKey, PK11SymKey *macKey, const unsigned char *keyName,
     const PRUint8 *in, unsigned int inLen,
     PRUint8 *out, unsigned int *outLen, unsigned int maxOutLen);
-SECStatus ssl_SelfUnprotect(
+SECStatus ssl_SelfEncryptUnprotectInt(
     PK11SymKey *encKey, PK11SymKey *macKey, const unsigned char *keyName,
     const PRUint8 *in, unsigned int inLen,
     PRUint8 *out, unsigned int *outLen, unsigned int maxOutLen);

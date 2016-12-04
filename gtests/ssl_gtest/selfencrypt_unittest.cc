@@ -108,7 +108,7 @@ class SelfEncryptTestBase : public ::testing::Test {
     uint8_t plaintext[1000];
     unsigned int plaintext_len;
 
-    SECStatus rv = ssl_SelfProtect(
+    SECStatus rv = ssl_SelfEncryptProtectInt(
         writeAes.get(), writeHmac.get(), writeKeyName, message_.data(),
         message_.len(), ciphertext, &ciphertext_len, sizeof(ciphertext));
     if (rv != SECSuccess) {
@@ -119,7 +119,7 @@ class SelfEncryptTestBase : public ::testing::Test {
     if (mutate) {
       mutate(ciphertext, &ciphertext_len);
     }
-    rv = ssl_SelfUnprotect(readAes.get(), readHmac.get(), readKeyName,
+    rv = ssl_SelfEncryptUnprotectInt(readAes.get(), readHmac.get(), readKeyName,
                            ciphertext, ciphertext_len, plaintext,
                            &plaintext_len, sizeof(plaintext));
     if (rv != SECSuccess) {
