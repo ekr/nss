@@ -329,12 +329,13 @@ ssl_SelfEncryptUnprotectInt(
 SECStatus
 ssl_SelfEncryptGetProtectedSize(unsigned int inLen, unsigned int *outLen)
 {
-    unsigned int size =
-            SELF_ENCRYPT_KEY_NAME_LEN +
+    *outLen = SELF_ENCRYPT_KEY_NAME_LEN +
             AES_BLOCK_SIZE +
-            inLen;
-    size = ((size / AES_BLOCK_SIZE) + 1) * AES_BLOCK_SIZE; /* Padded */
-    return size + SHA256_LENGTH;
+            2 +
+            ((inLen / AES_BLOCK_SIZE) + 1) * AES_BLOCK_SIZE + /* Padded */
+            SHA256_LENGTH;
+
+    return SECSuccess;
 }
 
 SECStatus

@@ -1488,7 +1488,10 @@ tls13_SendHelloRetryRequest(sslSocket *ss, const sslNamedGroupDef *selectedGroup
             2 + /* group extension id */
             2 + /* group extension length */
             2 /* group */;
-    cookieLen = tls13_GetHrrCookieLength(ss);
+    rv = tls13_GetHrrCookieLength(ss, &cookieLen);
+    if (rv != SECSuccess) {
+        goto loser;
+    }
     if (cookieLen) {
         extensionLen += 2 + 2 + 2 + cookieLen;
     }
@@ -1535,7 +1538,7 @@ tls13_SendHelloRetryRequest(sslSocket *ss, const sslNamedGroupDef *selectedGroup
 
     /* Cookie. */
     if (cookieLen) {
-        PRUint8 cookie[512];
+        PRUint8 cookie[1024];
         unsigned int tmp;
 
         rv = tls13_GetHrrCookie(ss, cookie, &tmp, sizeof(cookie));

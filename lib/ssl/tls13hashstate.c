@@ -120,8 +120,10 @@ tls13_GetHrrCookieLength(sslSocket *ss, unsigned int *length)
     switch (tls13_GetHash(ss)) {
         case ssl_hash_sha256:
             len = 308;
+            break;
         case ssl_hash_sha384:
             len = 724;
+            break;
         default:
             PORT_Assert(0);
             PORT_SetError(SEC_ERROR_INVALID_ARGS);
@@ -148,6 +150,7 @@ tls13_RecoverHashState(sslSocket *ss,
     unsigned char prefix[6];
     unsigned char *ptr = prefix;
 
+    PORT_Assert(0); /* Need to rewrite to do decryption. */
     PORT_Assert(!ss->ssl3.hs.recoveredHashState);
     ctx = PK11_CreateDigestContext(
         ssl3_HashTypeToOID(tls13_GetHash(ss)));
