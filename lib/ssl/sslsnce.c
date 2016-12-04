@@ -34,7 +34,7 @@
  *     sidCacheEntry            sidCacheData[ numSIDCacheEntries];
  *     certCacheEntry           certCacheData[numCertCacheEntries];
  *     SSLWrappedSymWrappingKey keyCacheData[ssl_auth_size][SSL_NUM_WRAP_MECHS];
- *     PRUint8                  keyNameSuffix[SESS_TICKET_KEY_VAR_NAME_LEN]
+ *     PRUint8                  keyNameSuffix[SELF_ENCRYPT_KEY_VAR_NAME_LEN]
  *     encKeyCacheEntry         ticketEncKey; // Wrapped
  *     encKeyCacheEntry         ticketMacKey; // Wrapped
  *     PRBool                   ticketKeysValid;
@@ -55,7 +55,7 @@
 #include "keyhi.h"
 #include "blapit.h"
 #include "sechash.h"
-
+#include "selfencrypt.h"
 #include <stdio.h>
 
 #if defined(XP_UNIX) || defined(XP_BEOS)
@@ -991,7 +991,7 @@ InitCache(cacheDesc *cache, int maxCacheEntries, int maxCertCacheEntries,
 
     cache->ticketKeyNameSuffix = (PRUint8 *)ptr;
     ptr = (ptrdiff_t)(cache->ticketKeyNameSuffix +
-                      SESS_TICKET_KEY_VAR_NAME_LEN);
+                      SELF_ENCRYPT_KEY_VAR_NAME_LEN);
     ptr = SID_ROUNDUP(ptr, SID_ALIGNMENT);
 
     cache->ticketEncKey = (encKeyCacheEntry *)ptr;
@@ -1697,7 +1697,7 @@ GenerateTicketKeys(void *pwArg, unsigned char *keyName, PK11SymKey **aesKey,
     PK11SymKey *aesKeyTmp = NULL;
     PK11SymKey *macKeyTmp = NULL;
     cacheDesc *cache = &globalCache;
-    PRUint8 ticketKeyNameSuffixLocal[SESS_TICKET_KEY_VAR_NAME_LEN];
+    PRUint8 ticketKeyNameSuffixLocal[SELF_ENCRYPT_KEY_VAR_NAME_LEN];
     PRUint8 *ticketKeyNameSuffix;
 
     if (!cache->cacheMem) {
@@ -1708,7 +1708,7 @@ GenerateTicketKeys(void *pwArg, unsigned char *keyName, PK11SymKey **aesKey,
     }
 
     if (PK11_GenerateRandom(ticketKeyNameSuffix,
-                            SESS_TICKET_KEY_VAR_NAME_LEN) !=
+                            SELF_ENCRYPT_KEY_VAR_NAME_LEN) !=
         SECSuccess) {
         SSL_DBG(("%d: SSL[%s]: Unable to generate random key name bytes.",
                  SSL_GETPID(), "unknown"));
@@ -1732,7 +1732,7 @@ GenerateTicketKeys(void *pwArg, unsigned char *keyName, PK11SymKey **aesKey,
                  SSL_GETPID(), "unknown"));
         goto loser;
     }
-    PORT_Memcpy(keyName, ticketKeyNameSuffix, SESS_TICKET_KEY_VAR_NAME_LEN);
+    PORT_Memcpy(keyName, ticketKeyNameSuffix, SELF_ENCRYPT_KEY_VAR_NAME_LEN);
     *aesKey = aesKeyTmp;
     *macKey = macKeyTmp;
     return PR_TRUE;
@@ -1807,7 +1807,7 @@ UnwrapCachedTicketKeys(SECKEYPrivateKey *svrPrivKey, unsigned char *keyName,
              SSL_GETPID(), "unknown"));
 
     PORT_Memcpy(keyName, cache->ticketKeyNameSuffix,
-                SESS_TICKET_KEY_VAR_NAME_LEN);
+                SELF_ENCRYPT_KEY_VAR_NAME_LEN);
     *aesKey = aesKeyTmp;
     *macKey = macKeyTmp;
     return PR_TRUE;

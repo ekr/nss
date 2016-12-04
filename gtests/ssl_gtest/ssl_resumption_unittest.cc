@@ -565,7 +565,7 @@ TEST_F(TlsConnectTest, TestTls13ResumptionDuplicateNST) {
   Connect();
 
   // Clear the session ticket keys to invalidate the old ticket.
-  SSLInt_ClearSessionTicketKey();
+  SSLInt_ClearSelfEncryptKey();
   SSLInt_SendNewSessionTicket(server_->ssl_fd());
 
   SendReceive();  // Need to read so that we absorb the session tickets.

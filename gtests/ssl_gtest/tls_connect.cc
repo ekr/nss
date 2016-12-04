@@ -166,13 +166,13 @@ void TlsConnectTestBase::ClearStats() {
 
 void TlsConnectTestBase::ClearServerCache() {
   SSL_ShutdownServerSessionIDCache();
-  SSLInt_ClearSessionTicketKey();
+  SSLInt_ClearSelfEncryptKey();
   SSL_ConfigServerSessionIDCache(1024, 0, 0, g_working_dir_path.c_str());
 }
 
 void TlsConnectTestBase::SetUp() {
   SSL_ConfigServerSessionIDCache(1024, 0, 0, g_working_dir_path.c_str());
-  SSLInt_ClearSessionTicketKey();
+  SSLInt_ClearSelfEncryptKey();
   ClearStats();
   Init();
 }
@@ -187,7 +187,7 @@ void TlsConnectTestBase::TearDown() {
   }
 
   SSL_ClearSessionCache();
-  SSLInt_ClearSessionTicketKey();
+  SSLInt_ClearSelfEncryptKey();
   SSL_ShutdownServerSessionIDCache();
 }
 

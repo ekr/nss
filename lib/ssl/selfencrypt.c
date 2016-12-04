@@ -6,6 +6,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "nss.h"
 #include "blapit.h"
 #include "pk11func.h"
 #include "ssl.h"
@@ -13,6 +14,103 @@
 #include "ssl3encode.h"
 #include "sslimpl.h"
 #include "selfencrypt.h"
+
+#define SELF_ENCRYPT_KEY_NAME_LEN 16
+#define SELF_ENCRYPT_KEY_NAME_PREFIX "NSS!"
+#define SELF_ENCRYPT_KEY_NAME_PREFIX_LEN 4
+#define SELF_ENCRYPT_KEY_VAR_NAME_LEN 12
+
+/* Handle the global self-encryption keys */
+static unsigned char self_encrypt_key_name[SELF_ENCRYPT_KEY_NAME_LEN];
+static PK11SymKey *self_encrypt_enc_key = NULL;
+static PK11SymKey *self_encrypt_mac_key = NULL;
+
+static PRCallOnceType generate_self_encrypt_keys_once;
+
+SECStatus ssl_GetSelfEncryptKeys(sslSocket *ss,
+                                  unsigned char **key_name,
+                                  PK11SymKey **aes_key, PK11SymKey **mac_key);
+
+SECStatus
+ssl_SelfEncryptShutdown(void *appData, void *nssData)
+{
+    if (self_encrypt_enc_key) {
+        PK11_FreeSymKey(self_encrypt_enc_key);
+        self_encrypt_enc_key = NULL;
+    }
+    if (self_encrypt_mac_key) {
+        PK11_FreeSymKey(self_encrypt_mac_key);
+        self_encrypt_mac_key = NULL;
+    }
+    PORT_Memset(&generate_self_encrypt_keys_once, 0,
+                sizeof(generate_self_encrypt_keys_once));
+    return SECSuccess;
+}
+
+static PRStatus
+ssl_GenerateSelfEncryptKeys(void *data)
+{
+    SECStatus rv;
+    sslSocket *ss = (sslSocket *)data;
+    sslServerCertType certType = { ssl_auth_rsa_decrypt, NULL };
+    const sslServerCert *sc;
+    SECKEYPrivateKey *svrPrivKey;
+    SECKEYPublicKey *svrPubKey;
+
+    sc = ssl_FindServerCert(ss, &certType);
+    if (!sc || !sc->serverKeyPair) {
+        SSL_DBG(("%d: SSL[%d]: No ssl_auth_rsa_decrypt cert and key pair",
+                 SSL_GETPID(), ss->fd));
+        goto loser;
+    }
+    svrPrivKey = sc->serverKeyPair->privKey;
+    svrPubKey = sc->serverKeyPair->pubKey;
+    if (svrPrivKey == NULL || svrPubKey == NULL) {
+        SSL_DBG(("%d: SSL[%d]: Pub or priv key(s) is NULL.",
+                 SSL_GETPID(), ss->fd));
+        goto loser;
+    }
+
+    /* Get a copy of the session keys from shared memory. */
+    PORT_Memcpy(self_encrypt_key_name, SELF_ENCRYPT_KEY_NAME_PREFIX,
+                sizeof(SELF_ENCRYPT_KEY_NAME_PREFIX));
+    if (!ssl_GetSessionTicketKeys(svrPrivKey, svrPubKey, ss->pkcs11PinArg,
+                                &self_encrypt_key_name[SELF_ENCRYPT_KEY_NAME_PREFIX_LEN],
+                                &self_encrypt_enc_key, &self_encrypt_mac_key))
+        return PR_FAILURE;
+
+    rv = NSS_RegisterShutdown(ssl_SelfEncryptShutdown, NULL);
+    if (rv != SECSuccess)
+        goto loser;
+
+    return PR_SUCCESS;
+
+loser:
+    ssl_SelfEncryptShutdown(NULL, NULL);
+    return PR_FAILURE;
+}
+
+SECStatus
+ssl_GetSelfEncryptKeys(sslSocket *ss,
+                        unsigned char **key_name,
+                        PK11SymKey **aes_key,
+                        PK11SymKey **mac_key)
+{
+    if (PR_CallOnceWithArg(&generate_self_encrypt_keys_once,
+                           ssl_GenerateSelfEncryptKeys, ss) !=
+        PR_SUCCESS)
+        return SECFailure;
+
+    if (self_encrypt_enc_key == NULL ||
+        self_encrypt_mac_key == NULL)
+        return SECFailure;
+
+    *key_name = self_encrypt_key_name;
+    *aes_key = self_encrypt_enc_key;
+    *mac_key = self_encrypt_mac_key;
+    return SECSuccess;
+}
+
 
 static SECStatus
 ssl_MacBuffer(PK11SymKey *key, CK_MECHANISM_TYPE mech,
@@ -106,7 +204,7 @@ ssl_SelfProtect(
     }
 
     /* Add header. */
-    rv = ssl3_AppendToItem(&outItem, keyName, SELF_ENCRYPTED_KEY_NAME_LEN);
+    rv = ssl3_AppendToItem(&outItem, keyName, SELF_ENCRYPT_KEY_NAME_LEN);
     if (rv != SECSuccess) {
         return SECFailure;
     }
@@ -162,7 +260,7 @@ ssl_SelfUnprotect(
     SECStatus rv;
 
     rv = ssl3_ConsumeFromItem(&inItem, &encodedKeyName,
-                              SELF_ENCRYPTED_KEY_NAME_LEN);
+                              SELF_ENCRYPT_KEY_NAME_LEN);
     if (rv != SECSuccess) {
         return SECFailure;
     }
@@ -198,7 +296,7 @@ ssl_SelfUnprotect(
 
     /* Now that everything is decoded, we can make progress. */
     /* 1. Check that we have the right key. */
-    if (PORT_Memcmp(keyName, encodedKeyName, SELF_ENCRYPTED_KEY_NAME_LEN)) {
+    if (PORT_Memcmp(keyName, encodedKeyName, SELF_ENCRYPT_KEY_NAME_LEN)) {
         PORT_SetError(SEC_ERROR_NOT_A_RECIPIENT);
         return SECFailure;
     }

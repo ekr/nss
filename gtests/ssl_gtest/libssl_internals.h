@@ -22,7 +22,7 @@ SECStatus SSLInt_UpdateSSLv2ClientRandom(PRFileDesc *fd, uint8_t *rnd,
                                          size_t msg_len);
 
 PRBool SSLInt_ExtensionNegotiated(PRFileDesc *fd, PRUint16 ext);
-void SSLInt_ClearSessionTicketKey();
+void SSLInt_ClearSelfEncryptKey();
 PRInt32 SSLInt_CountTls13CipherSpecs(PRFileDesc *fd);
 void SSLInt_PrintTls13CipherSpecs(PRFileDesc *fd);
 void SSLInt_ForceTimerExpiry(PRFileDesc *fd);

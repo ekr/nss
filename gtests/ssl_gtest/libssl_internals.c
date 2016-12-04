@@ -10,6 +10,7 @@
 #include "nss.h"
 #include "pk11pub.h"
 #include "seccomon.h"
+#include "selfencrypt.h"
 
 SECStatus SSLInt_IncrementClientHandshakeVersion(PRFileDesc *fd) {
   sslSocket *ss = ssl_FindSocket(fd);
@@ -62,9 +63,9 @@ PRBool SSLInt_ExtensionNegotiated(PRFileDesc *fd, PRUint16 ext) {
   return (PRBool)(ss && ssl3_ExtensionNegotiated(ss, ext));
 }
 
-void SSLInt_ClearSessionTicketKey() {
-  ssl3_SessionTicketShutdown(NULL, NULL);
-  NSS_UnregisterShutdown(ssl3_SessionTicketShutdown, NULL);
+void SSLInt_ClearSelfEncryptKey() {
+  ssl_SelfEncryptShutdown(NULL, NULL);
+  NSS_UnregisterShutdown(ssl_SelfEncryptShutdown, NULL);
 }
 
 SECStatus SSLInt_SetMTU(PRFileDesc *fd, PRUint16 mtu) {

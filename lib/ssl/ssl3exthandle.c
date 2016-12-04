@@ -18,92 +18,6 @@
 #include "ssl3exthandle.h"
 #include "tls13exthandle.h" /* For tls13_ServerSendStatusRequestXtn. */
 
-static unsigned char key_name[SESS_TICKET_KEY_NAME_LEN];
-static PK11SymKey *session_ticket_enc_key = NULL;
-static PK11SymKey *session_ticket_mac_key = NULL;
-
-static PRCallOnceType generate_session_keys_once;
-
-static SECStatus ssl3_GetSessionTicketKeys(sslSocket *ss,
-                                           PK11SymKey **aes_key, PK11SymKey **mac_key);
-
-SECStatus
-ssl3_SessionTicketShutdown(void *appData, void *nssData)
-{
-    if (session_ticket_enc_key) {
-        PK11_FreeSymKey(session_ticket_enc_key);
-        session_ticket_enc_key = NULL;
-    }
-    if (session_ticket_mac_key) {
-        PK11_FreeSymKey(session_ticket_mac_key);
-        session_ticket_mac_key = NULL;
-    }
-    PORT_Memset(&generate_session_keys_once, 0,
-                sizeof(generate_session_keys_once));
-    return SECSuccess;
-}
-
-static PRStatus
-ssl3_GenerateSessionTicketKeys(void *data)
-{
-    SECStatus rv;
-    sslSocket *ss = (sslSocket *)data;
-    sslServerCertType certType = { ssl_auth_rsa_decrypt, NULL };
-    const sslServerCert *sc;
-    SECKEYPrivateKey *svrPrivKey;
-    SECKEYPublicKey *svrPubKey;
-
-    sc = ssl_FindServerCert(ss, &certType);
-    if (!sc || !sc->serverKeyPair) {
-        SSL_DBG(("%d: SSL[%d]: No ssl_auth_rsa_decrypt cert and key pair",
-                 SSL_GETPID(), ss->fd));
-        goto loser;
-    }
-    svrPrivKey = sc->serverKeyPair->privKey;
-    svrPubKey = sc->serverKeyPair->pubKey;
-    if (svrPrivKey == NULL || svrPubKey == NULL) {
-        SSL_DBG(("%d: SSL[%d]: Pub or priv key(s) is NULL.",
-                 SSL_GETPID(), ss->fd));
-        goto loser;
-    }
-
-    /* Get a copy of the session keys from shared memory. */
-    PORT_Memcpy(key_name, SESS_TICKET_KEY_NAME_PREFIX,
-                sizeof(SESS_TICKET_KEY_NAME_PREFIX));
-    if (!ssl_GetSessionTicketKeys(svrPrivKey, svrPubKey, ss->pkcs11PinArg,
-                                  &key_name[SESS_TICKET_KEY_NAME_PREFIX_LEN],
-                                  &session_ticket_enc_key, &session_ticket_mac_key))
-        return PR_FAILURE;
-
-    rv = NSS_RegisterShutdown(ssl3_SessionTicketShutdown, NULL);
-    if (rv != SECSuccess)
-        goto loser;
-
-    return PR_SUCCESS;
-
-loser:
-    ssl3_SessionTicketShutdown(NULL, NULL);
-    return PR_FAILURE;
-}
-
-static SECStatus
-ssl3_GetSessionTicketKeys(sslSocket *ss, PK11SymKey **aes_key,
-                          PK11SymKey **mac_key)
-{
-    if (PR_CallOnceWithArg(&generate_session_keys_once,
-                           ssl3_GenerateSessionTicketKeys, ss) !=
-        PR_SUCCESS)
-        return SECFailure;
-
-    if (session_ticket_enc_key == NULL ||
-        session_ticket_mac_key == NULL)
-        return SECFailure;
-
-    *aes_key = session_ticket_enc_key;
-    *mac_key = session_ticket_mac_key;
-    return SECSuccess;
-}
-
 /* Format an SNI extension, using the name from the socket's URL,
  * unless that name is a dotted decimal string.
  * Used by client and server.
@@ -882,6 +796,7 @@ ssl3_EncodeSessionTicket(sslSocket *ss,
     SECItem ms_item = { 0, NULL, 0 };
     PRUint32 cert_length = 0;
     PRUint32 now;
+    unsigned char *key_name;
     PK11SymKey *aes_key = NULL;
     PK11SymKey *mac_key = NULL;
     SECItem *srvName = NULL;
@@ -902,7 +817,7 @@ ssl3_EncodeSessionTicket(sslSocket *ss,
         cert_length = 3 + ss->sec.ci.sid->peerCert->derCert.len;
     }
 
-    rv = ssl3_GetSessionTicketKeys(ss, &aes_key, &mac_key);
+    rv = ssl_GetSelfEncryptKeys(ss, &key_name, &aes_key, &mac_key);
     if (rv != SECSuccess)
         goto loser;
 
@@ -1176,6 +1091,7 @@ ssl3_ProcessSessionTicketCommon(sslSocket *ss, SECItem *data)
     SECItem cert_item;
     PRUint32 nameType;
     SECItem alpn_item;
+    unsigned char *key_name;
     PK11SymKey *aes_key = NULL;
     PK11SymKey *mac_key = NULL;
 
@@ -1196,7 +1112,7 @@ ssl3_ProcessSessionTicketCommon(sslSocket *ss, SECItem *data)
     }
 
     /* Get session ticket keys. */
-    rv = ssl3_GetSessionTicketKeys(ss, &aes_key, &mac_key);
+    rv = ssl_GetSelfEncryptKeys(ss, &key_name, &aes_key, &mac_key);
     if (rv != SECSuccess) {
         SSL_DBG(("%d: SSL[%d]: Unable to get/generate session ticket keys.",
                  SSL_GETPID(), ss->fd));

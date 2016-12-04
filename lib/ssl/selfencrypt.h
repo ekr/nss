@@ -11,7 +11,18 @@
 
 #include "secmodt.h"
 
-#define SELF_ENCRYPTED_KEY_NAME_LEN 16
+#define SELF_ENCRYPT_KEY_NAME_LEN 16
+#define SELF_ENCRYPT_KEY_VAR_NAME_LEN 12
+
+typedef struct sslSocketStr sslSocket;  /* Forward declaration. */
+
+SECStatus ssl_GetSelfEncryptKeys(sslSocket *ss,
+                                  unsigned char **key_name,
+                                  PK11SymKey **aes_key, PK11SymKey **mac_key);
+
+
+/* Exported for use in unit tests.*/
+SECStatus ssl_SelfEncryptShutdown(void *appData, void *nssData);
 
 SECStatus ssl_SelfProtect(
     PK11SymKey *encKey, PK11SymKey *macKey, const unsigned char *keyName,
