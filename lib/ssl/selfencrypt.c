@@ -14,11 +14,10 @@
 #include "sslimpl.h"
 #include "selfencrypt.h"
 
-
 static SECStatus
 ssl_MacBuffer(PK11SymKey *key, CK_MECHANISM_TYPE mech,
-               const unsigned char *in, unsigned int len,
-               unsigned char *mac, unsigned int macLen)
+              const unsigned char *in, unsigned int len,
+              unsigned char *mac, unsigned int macLen)
 {
     PK11Context *ctx = NULL;
     SECItem macParam = { 0, NULL, 0 };
@@ -94,7 +93,7 @@ ssl_SelfProtect(
     unsigned char iv[AES_BLOCK_SIZE];
     SECItem ivItem = { siBuffer, iv, sizeof(iv) };
     unsigned int ciphertextLen =
-            (1 + (inLen / AES_BLOCK_SIZE)) * AES_BLOCK_SIZE;
+        (1 + (inLen / AES_BLOCK_SIZE)) * AES_BLOCK_SIZE;
     unsigned char mac[32]; /* SHA-256 */
     SECItem outItem = { siBuffer, out, maxOutLen };
     SECStatus rv;
@@ -145,9 +144,9 @@ ssl_SelfProtect(
     return SECSuccess;
 }
 
-
-SECStatus ssl_SelfUnprotect(
-    PK11SymKey *encKey, PK11SymKey* macKey, const unsigned char *keyName,
+SECStatus
+ssl_SelfUnprotect(
+    PK11SymKey *encKey, PK11SymKey *macKey, const unsigned char *keyName,
     const PRUint8 *in, unsigned int inLen,
     PRUint8 *out, unsigned int *outLen, unsigned int maxOutLen)
 {
@@ -158,7 +157,7 @@ SECStatus ssl_SelfUnprotect(
     unsigned char *cipherText;
     PRUint32 cipherTextLen;
     unsigned char *encodedMac;
-    unsigned char computedMac[32];  // TODO(ekr@rtfm.com): Hardcoded
+    unsigned char computedMac[32]; // TODO(ekr@rtfm.com): Hardcoded
     unsigned int bytesToMac;
     SECStatus rv;
 

@@ -27,7 +27,6 @@ static PRCallOnceType generate_session_keys_once;
 static SECStatus ssl3_GetSessionTicketKeys(sslSocket *ss,
                                            PK11SymKey **aes_key, PK11SymKey **mac_key);
 
-
 SECStatus
 ssl3_SessionTicketShutdown(void *appData, void *nssData)
 {

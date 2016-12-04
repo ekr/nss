@@ -20,48 +20,41 @@ extern "C" {
 
 namespace nss_test {
 
-static const uint8_t kAesKey1Buf[] = {
-  0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b,
-  0x0c, 0x0d, 0x0e, 0x0f
-};
+static const uint8_t kAesKey1Buf[] = {0x00, 0x01, 0x02, 0x03, 0x04, 0x05,
+                                      0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b,
+                                      0x0c, 0x0d, 0x0e, 0x0f};
 static const DataBuffer kAesKey1(kAesKey1Buf, sizeof(kAesKey1Buf));
 
-static const uint8_t kAesKey2Buf[] = {
-  0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b,
-  0x1c, 0x1d, 0x1e, 0x1f
-};
+static const uint8_t kAesKey2Buf[] = {0x10, 0x11, 0x12, 0x13, 0x14, 0x15,
+                                      0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b,
+                                      0x1c, 0x1d, 0x1e, 0x1f};
 static const DataBuffer kAesKey2(kAesKey2Buf, sizeof(kAesKey2Buf));
 
-
 static const uint8_t kHmacKey1Buf[] = {
-  0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b,
-  0x0c, 0x0d, 0x0e, 0x0f, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17,
-  0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f
-};
+    0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a,
+    0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15,
+    0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f};
 static const DataBuffer kHmacKey1(kHmacKey1Buf, sizeof(kHmacKey1Buf));
 
 static const uint8_t kHmacKey2Buf[] = {
-  0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b,
-  0x1c, 0x1d, 0x1e, 0x1f, 0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27,
-  0x28, 0x29, 0x2a, 0x2b, 0x2c, 0x2d, 0x2e, 0x2f
-};
+    0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a,
+    0x1b, 0x1c, 0x1d, 0x1e, 0x1f, 0x20, 0x21, 0x22, 0x23, 0x24, 0x25,
+    0x26, 0x27, 0x28, 0x29, 0x2a, 0x2b, 0x2c, 0x2d, 0x2e, 0x2f};
 static const DataBuffer kHmacKey2(kHmacKey2Buf, sizeof(kHmacKey2Buf));
 
-static const unsigned char *kKeyName1 =
-    reinterpret_cast<const unsigned char *>("KEY1KEY1KEY1");
-static const unsigned char *kKeyName2 =
-    reinterpret_cast<const uint8_t *>("KEY2KEY2KEY2");
+static const unsigned char* kKeyName1 =
+    reinterpret_cast<const unsigned char*>("KEY1KEY1KEY1");
+static const unsigned char* kKeyName2 =
+    reinterpret_cast<const uint8_t*>("KEY2KEY2KEY2");
 
 static void ImportKey(ScopedPK11SymKey* to, const DataBuffer& key,
                       PK11SlotInfo* slot, CK_MECHANISM_TYPE mech) {
   SECItem key_item = {siBuffer, const_cast<uint8_t*>(key.data()),
                       static_cast<unsigned int>(key.len())};
 
-  PK11SymKey* inner =
-      PK11_ImportSymKey(slot, mech, PK11_OriginUnwrap,
-                        mech == CKM_AES_CBC ?
-                        CKA_ENCRYPT : CKA_SIGN,
-                        &key_item, NULL);
+  PK11SymKey* inner = PK11_ImportSymKey(
+      slot, mech, PK11_OriginUnwrap,
+      mech == CKM_AES_CBC ? CKA_ENCRYPT : CKA_SIGN, &key_item, NULL);
   ASSERT_NE(nullptr, inner);
   to->reset(inner);
 }
@@ -74,8 +67,12 @@ extern FILE* ssl_trace_iob;
 class SelfEncryptTestBase : public ::testing::Test {
  public:
   SelfEncryptTestBase(size_t message_size)
-      : aes1_(), aes2_(), hmac1_(), hmac2_(),
-        message_(), slot_(PK11_GetInternalSlot()) {
+      : aes1_(),
+        aes2_(),
+        hmac1_(),
+        hmac2_(),
+        message_(),
+        slot_(PK11_GetInternalSlot()) {
     EXPECT_NE(nullptr, slot_);
     char* ev = getenv("SSLTRACE");
     if (ev && ev[0]) {
@@ -99,29 +96,21 @@ class SelfEncryptTestBase : public ::testing::Test {
     ImportKey(&hmac2_, kHmacKey2, slot_.get(), CKM_SHA256_HMAC);
   }
 
-  void SelfTest(const unsigned char* writeKeyName,
-                const ScopedPK11SymKey& writeAes,
-                const ScopedPK11SymKey& writeHmac,
-                const unsigned char* readKeyName,
-                const ScopedPK11SymKey& readAes,
-                const ScopedPK11SymKey& readHmac,
-                PRErrorCode error_code = 0,
-                std::function<void(
-                    uint8_t* ciphertext,
-                    unsigned int* ciphertext_len)> mutate = nullptr
-                )
-  {
+  void SelfTest(
+      const unsigned char* writeKeyName, const ScopedPK11SymKey& writeAes,
+      const ScopedPK11SymKey& writeHmac, const unsigned char* readKeyName,
+      const ScopedPK11SymKey& readAes, const ScopedPK11SymKey& readHmac,
+      PRErrorCode error_code = 0,
+      std::function<void(uint8_t* ciphertext, unsigned int* ciphertext_len)>
+          mutate = nullptr) {
     uint8_t ciphertext[1000];
     unsigned int ciphertext_len;
     uint8_t plaintext[1000];
     unsigned int plaintext_len;
 
     SECStatus rv = ssl_SelfProtect(
-        writeAes.get(),
-        writeHmac.get(),
-        writeKeyName,
-        message_.data(), message_.len(),
-        ciphertext, &ciphertext_len, sizeof(ciphertext));
+        writeAes.get(), writeHmac.get(), writeKeyName, message_.data(),
+        message_.len(), ciphertext, &ciphertext_len, sizeof(ciphertext));
     if (rv != SECSuccess) {
       std::cerr << "Error: " << PORT_ErrorToName(PORT_GetError()) << std::endl;
     }
@@ -130,12 +119,9 @@ class SelfEncryptTestBase : public ::testing::Test {
     if (mutate) {
       mutate(ciphertext, &ciphertext_len);
     }
-    rv = ssl_SelfUnprotect(
-        readAes.get(),
-        readHmac.get(),
-        readKeyName,
-        ciphertext, ciphertext_len,
-        plaintext, &plaintext_len, sizeof(plaintext));
+    rv = ssl_SelfUnprotect(readAes.get(), readHmac.get(), readKeyName,
+                           ciphertext, ciphertext_len, plaintext,
+                           &plaintext_len, sizeof(plaintext));
     if (rv != SECSuccess) {
       std::cerr << "Error: " << PORT_ErrorToName(PORT_GetError()) << std::endl;
     }
@@ -161,7 +147,7 @@ class SelfEncryptTestBase : public ::testing::Test {
 };
 
 class SelfEncryptTestVariable : public SelfEncryptTestBase,
-                        public::testing::WithParamInterface<size_t> {
+                                public ::testing::WithParamInterface<size_t> {
  public:
   SelfEncryptTestVariable() : SelfEncryptTestBase(GetParam()) {}
 };
@@ -221,7 +207,7 @@ TEST_P(SelfEncryptTestVariable, BadMac) {
   SelfTest(kKeyName1, aes1_, hmac1_, kKeyName1, aes1_, hmac1_,
            SEC_ERROR_BAD_DATA,
            [](uint8_t* ciphertext, unsigned int* ciphertext_len) {
-             ciphertext[*ciphertext_len-1]++;
+             ciphertext[*ciphertext_len - 1]++;
            });
 }
 
@@ -269,7 +255,6 @@ TEST_F(SelfEncryptTest128, MacWithAESKey) {
   SelfTest(kKeyName1, aes1_, hmac1_, kKeyName1, aes1_, aes1_,
            SEC_ERROR_LIBRARY_FAILURE);
 }
-
 
 INSTANTIATE_TEST_CASE_P(VariousSizes, SelfEncryptTestVariable,
                         ::testing::Values(0, 15, 16, 31, 255, 256, 257));

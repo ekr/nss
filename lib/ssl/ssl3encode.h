@@ -23,4 +23,3 @@ SECStatus ssl3_ConsumeNumberFromItem(SECItem *item,
                                      PRUint32 *num, PRUint32 bytes);
 
 #endif
-

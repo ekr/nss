@@ -69,7 +69,7 @@ ssl3_ConsumeNumberFromItem(SECItem *item, PRUint32 *num, PRUint32 bytes)
         return SECFailure;
     }
 
-    *num=0;
+    *num = 0;
     for (i = 0; i < bytes; i++) {
         *num = (*num << 8) + item->data[i];
     }
@@ -79,5 +79,3 @@ ssl3_ConsumeNumberFromItem(SECItem *item, PRUint32 *num, PRUint32 bytes)
 
     return SECSuccess;
 }
-
-

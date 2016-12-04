@@ -14,11 +14,11 @@
 #define SELF_ENCRYPTED_KEY_NAME_LEN 16
 
 SECStatus ssl_SelfProtect(
-    PK11SymKey *encKey, PK11SymKey* macKey, const unsigned char *keyName,
+    PK11SymKey *encKey, PK11SymKey *macKey, const unsigned char *keyName,
     const PRUint8 *in, unsigned int inLen,
     PRUint8 *out, unsigned int *outLen, unsigned int maxOutLen);
 SECStatus ssl_SelfUnprotect(
-    PK11SymKey *encKey, PK11SymKey* macKey, const unsigned char *keyName,
+    PK11SymKey *encKey, PK11SymKey *macKey, const unsigned char *keyName,
     const PRUint8 *in, unsigned int inLen,
     PRUint8 *out, unsigned int *outLen, unsigned int maxOutLen);
 
