@@ -1027,7 +1027,6 @@ ssl3_EncodeSessionTicket(sslSocket *ss,
 
     /* 128 just gives us enough room for overhead. */
     if (SECITEM_AllocItem(NULL, &ticket_buf, plaintext_length + 128) == NULL) {
-        rv = SECFailure;
         goto loser;
     }
 
@@ -1052,7 +1051,7 @@ loser:
         SECITEM_FreeItem(&ticket_buf, PR_FALSE);
     }
 
-    return rv;
+    return SECFailure;
 }
 
 /* When a client receives a SessionTicket extension a NewSessionTicket
