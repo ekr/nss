@@ -21,9 +21,9 @@
  * inner value being.
  *
  * struct {
- *     uint8 indicator = 0xff;  // To disambiguate from tickets.
- *     uint8 hash;              // The hash function (ssl_auth_type)
- *     opaque state<0..2^16>;   // The hash state.
+ *     uint8 indicator = 0xff;          // To disambiguate from tickets.
+ *     uint8 hash;                      // The hash function (ssl_auth_type)
+ *     opaque state[rest_of_buffer]>;   // The hash state.
  * } CookieInner;
  */
 SECStatus
@@ -81,12 +81,7 @@ tls13_GetHrrCookie(sslSocket *ss,
     }
     PK11_DestroyContext(ctx, PR_TRUE);
 
-    /* Encode the rest of the cookie. */
-    rv = ssl3_AppendNumberToItem(&cookieItem, buflen, 2);
-    if (rv != SECSuccess) {
-        PORT_Free(ret);
-        return SECFailure;
-    }
+    /* Encode the hash state */
     rv = ssl3_AppendToItem(&cookieItem, ret, buflen);
     PORT_Free(ret);
     if (rv != SECSuccess) {
@@ -130,16 +125,12 @@ tls13_GetHrrCookieLength(sslSocket *ss, unsigned int *length)
             return SECFailure;
     }
 
-    len += 1 + 1 + 2;  /* Indicator + hash + length */
+    len += 1 + 1;
 
     return ssl_SelfEncryptGetProtectedSize(len, length);
 }
 
-/* Recover the hash state from the cookie.
- *
- * IMPORTANT: In a real implementation we would MAC the state. Right
- * now we just trust it. DO NOT LAND.
- */
+/* Recover the hash state from the cookie. */
 SECStatus
 tls13_RecoverHashState(sslSocket *ss,
                        unsigned char *cookie,
@@ -149,9 +140,31 @@ tls13_RecoverHashState(sslSocket *ss,
     PK11Context *ctx;
     unsigned char prefix[6];
     unsigned char *ptr = prefix;
+    unsigned char plaintext[1024];
+    SECItem ptItem = { siBuffer, plaintext, 0 };
+    PRUint32 tmp;
 
-    PORT_Assert(0); /* Need to rewrite to do decryption. */
     PORT_Assert(!ss->ssl3.hs.recoveredHashState);
+    rv = ssl_SelfEncryptUnprotect(ss, cookie, cookieLen,
+                                  ptItem.data, &ptItem.len, sizeof(plaintext));
+    if (rv != SECSuccess) {
+        return SECFailure;
+    }
+
+    /* Should start with 0xff. */
+    rv = ssl3_ConsumeNumberFromItem(&ptItem, &tmp, 1);
+    if ((rv != SECSuccess) || (tmp != 0xff)) {
+        FATAL_ERROR(ss, SSL_ERROR_RX_MALFORMED_CLIENT_HELLO, illegal_parameter);
+        return SECFailure;
+    }
+    /* The hash function should be right or there are some shenanigans. */
+    rv = ssl3_ConsumeNumberFromItem(&ptItem, &tmp, 1);
+    if ((rv != SECSuccess) || (tmp != tls13_GetHash(ss))) {
+        FATAL_ERROR(ss, SSL_ERROR_RX_MALFORMED_CLIENT_HELLO, illegal_parameter);
+        return SECFailure;
+    }
+
+    /* Now recover the hash state. */
     ctx = PK11_CreateDigestContext(
         ssl3_HashTypeToOID(tls13_GetHash(ss)));
     if (!ctx) {
@@ -159,7 +172,7 @@ tls13_RecoverHashState(sslSocket *ss,
         return SECFailure;
     }
 
-    rv = PK11_RestoreContext(ctx, cookie, cookieLen);
+    rv = PK11_RestoreContext(ctx, ptItem.data, ptItem.len);
     if (rv != SECSuccess) {
         FATAL_ERROR(ss, SSL_ERROR_RX_MALFORMED_CLIENT_HELLO, illegal_parameter);
         goto loser;
