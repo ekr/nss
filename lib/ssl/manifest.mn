@@ -55,3 +55,5 @@ LIBRARY_VERSION = 3
 
 # This part of the code, including all sub-dirs, can be optimized for size
 export ALLOW_OPT_CODE_SIZE = 1
+
+DEFINES += -DNSS_ENABLE_TLS13_SHORT_HEADERS
