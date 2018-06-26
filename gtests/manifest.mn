@@ -27,6 +27,7 @@ NSS_SRCDIRS = \
 	softoken_gtest \
 	ssl_gtest \
 	nss_bogo_shim \
+        perc_server \
 	$(NULL)
 endif
 endif
