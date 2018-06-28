@@ -55,8 +55,8 @@ class Agent {
     auto rv = SSL_OptionSet(ssl_fd_.get(), SSL_NO_CACHE, PR_TRUE);
     if (rv != SECSuccess) return false;
 
-    const uint8_t ciphers[] = {EKT_AESKW_128, EKT_AESKW_256};
-    rv = SSL_SetEKTCiphers(ssl_fd_.get(), ciphers, PR_ARRAY_SIZE(ciphers));
+    const uint8_t ekt_ciphers[] = {EKT_AESKW_128, EKT_AESKW_256};
+    rv = SSL_SetEKTCiphers(ssl_fd_.get(), ekt_ciphers, PR_ARRAY_SIZE(ekt_ciphers));
     if (rv != SECSuccess) return false;
 
     const SSLEKTKey ektKey = {
@@ -68,6 +68,11 @@ class Agent {
       0xB0B0B0
     };
     rv = SSL_SetEKTKey(ssl_fd_.get(), &ektKey);
+    if (rv != SECSuccess) return false;
+
+    const uint16_t srtp_ciphers[] = {SRTP_AES128_CM_HMAC_SHA1_80,
+                                     SRTP_AES128_CM_HMAC_SHA1_32};
+    rv = SSL_SetSRTPCiphers(ssl_fd_.get(), srtp_ciphers, PR_ARRAY_SIZE(srtp_ciphers));
     if (rv != SECSuccess) return false;
 
     rv = SSL_ResetHandshake(ssl_fd_.get(), PR_TRUE);
@@ -98,6 +103,14 @@ class Agent {
       }
 
       std::cout << "EKT cipher " << static_cast<int>(cipher) << std::endl;
+
+      uint16_t srtp;
+      rv = SSL_GetSRTPCipher(ssl_fd_.get(), &srtp);
+      if (rv != SECSuccess) {
+        return false;
+      }
+
+      std::cout << "SRTP cipher: " << srtp << std::endl;
     } else {
       auto err = PR_GetError();
       if (err == PR_WOULD_BLOCK_ERROR) {
