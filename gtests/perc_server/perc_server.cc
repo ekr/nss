@@ -155,7 +155,7 @@ class Server {
       char port[7];
 
       auto rv = PR_NetAddrToString(&remote, addr, sizeof(addr));
-      if (rv != SECSuccess) {
+      if (rv != PR_SUCCESS) {
         std::cerr << "Couldn't convert address\n";
         return "";
       }
