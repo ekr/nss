@@ -81,6 +81,30 @@ class Agent {
     return true;
   }
 
+
+  // Create the EKT Packet to send out.
+  //
+  // I am using the ad-hoc structure
+  //
+  // struct {
+  //   uint8 marker == 0xff
+  //   opaque ektKey<0..2^8-1>;
+  //   opaque srtpMasterSalt<0..2^8-1>;
+  //   uint16 ektSPI;
+  //   uint32 ektTTL;
+  // }
+  void MarshallEKTPacket(const SSLEKTKey& key, DataBuffer* buffer) {
+    size_t index = 0;
+
+    index = buffer->Write(index, 0xff, 1);
+    index = buffer->Write(index, key.ektKeyLength, 1);
+    index = buffer->Write(index, key.ektKeyValue, key.ektKeyLength);
+    index = buffer->Write(index, key.srtpMasterSaltLength, 1);
+    index = buffer->Write(index, key.srtpMasterSalt, key.srtpMasterSaltLength);
+    index = buffer->Write(index, key.ektSPI, 2);
+    index = buffer->Write(index, key.ektTTL, 4);
+  }
+
   bool NewData(const uint8_t* buf, size_t len) {
     DataBuffer db(buf, len);
 
@@ -111,6 +135,16 @@ class Agent {
       }
 
       std::cout << "SRTP cipher: " << srtp << std::endl;
+
+      DataBuffer d;
+      MarshallEKTPacket(ektKey, &d);
+
+      auto n = socket_->Write(ssl_fd_.get(), d.data(), d.len());
+      if (static_cast<size_t>(n) != d.len()) {
+        std::cerr << "Couldn't write EKT packet\n";
+        return false;
+      }
+      std::cout << "Wrote EKT key\n";
     } else {
       auto err = PR_GetError();
       if (err == PR_WOULD_BLOCK_ERROR) {
@@ -120,6 +154,7 @@ class Agent {
         return false;
       }
     }
+
 
     return true;
   }
