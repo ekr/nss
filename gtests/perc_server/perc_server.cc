@@ -160,7 +160,7 @@ class Server {
         return "";
       }
 
-      snprintf(port, size_t(port), ":%u", PR_ntohs(remote.inet.port));
+      snprintf(port, sizeof(port), ":%u", PR_ntohs(remote.inet.port));
 
       return std::string(addr) + port;
   }
