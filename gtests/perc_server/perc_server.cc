@@ -55,6 +55,21 @@ class Agent {
     auto rv = SSL_OptionSet(ssl_fd_.get(), SSL_NO_CACHE, PR_TRUE);
     if (rv != SECSuccess) return false;
 
+    const uint8_t ciphers[] = {EKT_AESKW_128, EKT_AESKW_256};
+    rv = SSL_SetEKTCiphers(ssl_fd_.get(), ciphers, PR_ARRAY_SIZE(ciphers));
+    if (rv != SECSuccess) return false;
+
+    const SSLEKTKey ektKey = {
+      {0, 1, 2, 3},
+      4,
+      {4, 5, 6, 7, 8, 9},
+      6,
+      0xA0A0,
+      0xB0B0B0
+    };
+    rv = SSL_SetEKTKey(ssl_fd_.get(), &ektKey);
+    if (rv != SECSuccess) return false;
+
     rv = SSL_ResetHandshake(ssl_fd_.get(), PR_TRUE);
     if (rv != SECSuccess) return false;
 
@@ -69,6 +84,20 @@ class Agent {
     auto rv = SSL_ForceHandshake(ssl_fd_.get());
     if (rv == SECSuccess) {
       std::cout << "DTLS connected\n";
+
+      uint8_t cipher;
+      rv = SSL_GetEKTCipher(ssl_fd_.get(), &cipher);
+      if (rv != SECSuccess) {
+        return false;
+      }
+
+      SSLEKTKey ektKey;
+      rv = SSL_GetEKTKey(ssl_fd_.get(), &ektKey);
+      if (rv != SECSuccess) {
+        return false;
+      }
+
+      std::cout << "EKT cipher " << static_cast<int>(cipher) << std::endl;
     } else {
       auto err = PR_GetError();
       if (err == PR_WOULD_BLOCK_ERROR) {
@@ -202,7 +231,10 @@ class Server {
         peer = tmp->second;
       }
 
-      (void)peer->NewData(buf, n);
+      auto status = peer->NewData(buf, n);
+      if (!status) {
+        std::cerr << "Handshake failed\n";
+      }
     }
   }
  private:
