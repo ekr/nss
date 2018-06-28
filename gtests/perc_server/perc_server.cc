@@ -70,8 +70,8 @@ class Agent {
     rv = SSL_SetEKTKey(ssl_fd_.get(), &ektKey);
     if (rv != SECSuccess) return false;
 
-    const uint16_t srtp_ciphers[] = {SRTP_AES128_CM_HMAC_SHA1_80,
-                                     SRTP_AES128_CM_HMAC_SHA1_32};
+    const uint16_t srtp_ciphers[] = {SRTP_AEAD_AES_128_GCM_DOUBLE,
+                                     SRTP_AEAD_AES_256_GCM_DOUBLE};
     rv = SSL_SetSRTPCiphers(ssl_fd_.get(), srtp_ciphers, PR_ARRAY_SIZE(srtp_ciphers));
     if (rv != SECSuccess) return false;
 
