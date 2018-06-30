@@ -101,6 +101,9 @@ struct TLSExtensionDataStr {
 
     /* The record size limit set by the peer. Our value is kept in ss->opt. */
     PRUint16 recordSizeLimit;
+
+    /* The ESNI value. */
+    SECItem esniBuf; /* The client's pre-computed ESNI value. */
 };
 
 typedef struct TLSExtensionStr {

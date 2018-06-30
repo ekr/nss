@@ -36,6 +36,8 @@
 
 typedef struct sslSocketStr sslSocket;
 typedef struct sslNamedGroupDefStr sslNamedGroupDef;
+typedef struct sslESNIKeysStr sslESNIKeys;
+
 #include "sslencode.h"
 #include "sslexp.h"
 #include "ssl3ext.h"
@@ -1066,6 +1068,11 @@ struct sslSocketStr {
 
     /* Whether we are doing stream or datagram mode */
     SSLProtocolVariant protocolVariant;
+
+    /* ESNI Key */
+    sslEphemeralKeyPair *esniPrivateKey;
+    SECItem esniKeysRecord;
+    sslESNIKeys *peerEsniKeys;
 };
 
 struct sslSelfEncryptKeysStr {
@@ -1170,6 +1177,7 @@ extern int ssl_Do1stHandshake(sslSocket *ss);
 
 extern SECStatus ssl3_InitPendingCipherSpecs(sslSocket *ss, PK11SymKey *secret,
                                              PRBool derive);
+extern void ssl_DestroyKeyMaterial(ssl3KeyMaterial *keyMaterial);
 extern sslSessionID *ssl3_NewSessionID(sslSocket *ss, PRBool is_server);
 extern sslSessionID *ssl_LookupSID(const PRIPv6Addr *addr, PRUint16 port,
                                    const char *peerID, const char *urlSvrName);
@@ -1499,7 +1507,7 @@ extern SECStatus ssl3_HandleECDHClientKeyExchange(sslSocket *ss,
                                                   sslKeyPair *serverKeys);
 extern SECStatus ssl3_SendECDHServerKeyExchange(sslSocket *ss);
 extern SECStatus ssl_ImportECDHKeyShare(
-    sslSocket *ss, SECKEYPublicKey *peerKey,
+    SECKEYPublicKey *peerKey,
     PRUint8 *b, PRUint32 length, const sslNamedGroupDef *curve);
 
 extern SECStatus ssl3_ComputeCommonKeyHash(SSLHashType hashAlg,
@@ -1564,6 +1572,12 @@ extern void ssl_FreePRSocket(PRFileDesc *fd);
  * various ciphers */
 extern unsigned int ssl3_config_match_init(sslSocket *);
 
+/* Return PR_TRUE if suite is usable.  This if the suite is permitted by policy,
+ * enabled, has a certificate (as needed), has a viable key agreement method, is
+ * usable with the negotiated TLS version, and is otherwise usable. */
+PRBool ssl3_config_match(const ssl3CipherSuiteCfg *suite, PRUint8 policy,
+                         const SSLVersionRange *vrange, const sslSocket *ss);
+
 /* calls for accessing wrapping keys across processes. */
 extern SECStatus
 ssl_GetWrappingKey(unsigned int symWrapMechIndex, unsigned int wrapKeyIndex,
@@ -1593,6 +1607,8 @@ extern SECStatus ssl_InitSessionCacheLocks(PRBool lazyInit);
 extern SECStatus ssl_FreeSessionCacheLocks(void);
 
 CK_MECHANISM_TYPE ssl3_Alg2Mech(SSLCipherAlgorithm calg);
+SECStatus ssl3_NegotiateCipherSuiteInner(sslSocket *ss, const SECItem *suites,
+                                         PRUint16 version, PRUint16 *suitep);
 SECStatus ssl3_NegotiateCipherSuite(sslSocket *ss, const SECItem *suites,
                                     PRBool initHashes);
 SECStatus ssl3_InitHandshakeHashes(sslSocket *ss);
@@ -1640,6 +1656,9 @@ PK11SymKey *ssl3_GetWrappingKey(sslSocket *ss,
 SECStatus ssl3_FillInCachedSID(sslSocket *ss, sslSessionID *sid,
                                PK11SymKey *secret);
 const ssl3CipherSuiteDef *ssl_LookupCipherSuiteDef(ssl3CipherSuite suite);
+const ssl3CipherSuiteCfg * ssl_LookupCipherSuiteCfg(ssl3CipherSuite suite,
+                                                    const ssl3CipherSuiteCfg *suites);
+
 SECStatus ssl3_SelectServerCert(sslSocket *ss);
 SECStatus ssl_PickSignatureScheme(sslSocket *ss,
                                   CERTCertificate *cert,

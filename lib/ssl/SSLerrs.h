@@ -552,3 +552,7 @@ ER3(SSL_ERROR_RX_MALFORMED_DTLS_ACK, (SSL_ERROR_BASE + 174),
 
 ER3(SSL_ERROR_DH_KEY_TOO_LONG, (SSL_ERROR_BASE + 175),
     "SSL received a DH key share that's too long (>8192 bit).")
+
+ER3(SSL_ERROR_RX_MALFORMED_ESNI_KEYS, (SSL_ERROR_BASE + 176),
+    "SSL received a malformed ESNI keys structure")
+

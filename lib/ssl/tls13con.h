@@ -85,6 +85,11 @@ SECStatus tls13_ConstructHelloRetryRequest(sslSocket *ss,
                                            sslBuffer *buffer);
 SECStatus tls13_HandleHelloRetryRequest(sslSocket *ss, const PRUint8 *b,
                                         PRUint32 length);
+SECStatus tls13_HandleKeyShare(sslSocket *ss,
+                               TLS13KeyShareEntry *entry,
+                               sslKeyPair *keyPair,
+                               SSLHashType hash,
+                               PK11SymKey **out);
 void tls13_DestroyKeyShareEntry(TLS13KeyShareEntry *entry);
 void tls13_DestroyKeyShares(PRCList *list);
 SECStatus tls13_CreateKeyShare(sslSocket *ss, const sslNamedGroupDef *groupDef);
@@ -120,6 +125,7 @@ SECStatus tls13_SendKeyUpdate(sslSocket *ss, tls13KeyUpdateRequest request,
                               PRBool buffer);
 SECStatus SSLExp_KeyUpdate(PRFileDesc *fd, PRBool requestUpdate);
 PRBool tls13_MaybeTls13(sslSocket *ss);
+SSLAEADCipher tls13_GetAead(const ssl3BulkCipherDef *cipherDef);
 void tls13_SetSpecRecordVersion(sslSocket *ss, ssl3CipherSpec *spec);
 
 #endif /* __tls13con_h_ */

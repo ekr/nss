@@ -15,6 +15,7 @@
 #include "selfencrypt.h"
 #include "ssl3ext.h"
 #include "ssl3exthandle.h"
+#include "tls13esni.h"
 #include "tls13exthandle.h" /* For tls13_ServerSendStatusRequestXtn. */
 
 /* Format an SNI extension, using the name from the socket's URL,
@@ -22,23 +23,24 @@
  * Used by client and server.
  */
 SECStatus
-ssl3_ClientSendServerNameXtn(const sslSocket *ss, TLSExtensionData *xtnData,
-                             sslBuffer *buf, PRBool *added)
+ssl3_ClientFormatServerNameXtn(const sslSocket *ss, const char *url,
+                               TLSExtensionData *xtnData,
+                               sslBuffer *buf, PRBool *added)
 {
     unsigned int len;
     PRNetAddr netAddr;
     SECStatus rv;
 
     /* must have a hostname */
-    if (!ss->url || !ss->url[0]) {
+    if (!url || !url[0]) {
         return SECSuccess;
     }
     /* must not be an IPv4 or IPv6 address */
-    if (PR_SUCCESS == PR_StringToNetAddr(ss->url, &netAddr)) {
+    if (PR_SUCCESS == PR_StringToNetAddr(url, &netAddr)) {
         /* is an IP address (v4 or v6) */
         return SECSuccess;
     }
-    len = PORT_Strlen(ss->url);
+    len = PORT_Strlen(url);
     /* length of server_name_list */
     rv = sslBuffer_AppendNumber(buf, len + 3, 2);
     if (rv != SECSuccess) {
@@ -50,7 +52,7 @@ ssl3_ClientSendServerNameXtn(const sslSocket *ss, TLSExtensionData *xtnData,
         return SECFailure;
     }
     /* HostName (length and value) */
-    rv = sslBuffer_AppendVariable(buf, (const PRUint8 *)ss->url, len, 2);
+    rv = sslBuffer_AppendVariable(buf, (const PRUint8 *)url, len, 2);
     if (rv != SECSuccess) {
         return SECFailure;
     }
@@ -59,7 +61,18 @@ ssl3_ClientSendServerNameXtn(const sslSocket *ss, TLSExtensionData *xtnData,
     return SECSuccess;
 }
 
-/* Handle an incoming SNI extension. */
+SECStatus
+ssl3_ClientSendServerNameXtn(const sslSocket *ss, TLSExtensionData *xtnData,
+                             sslBuffer *buf, PRBool *added)
+{
+    const char *url = ss->url;
+
+    if (xtnData->esniBuf.len != 0) {
+        url = ss->peerEsniKeys->dummySni;
+    }
+    return ssl3_ClientFormatServerNameXtn(ss, url, xtnData, buf, added);
+}
+
 SECStatus
 ssl3_HandleServerNameXtn(const sslSocket *ss, TLSExtensionData *xtnData,
                          SECItem *data)
@@ -70,6 +83,11 @@ ssl3_HandleServerNameXtn(const sslSocket *ss, TLSExtensionData *xtnData,
 
     if (!ss->sec.isServer) {
         return SECSuccess; /* ignore extension */
+    }
+
+    if (ssl3_ExtensionNegotiated(ss, ssl_tls13_encrypted_sni_xtn)) {
+        PORT_Assert(ss->version >= SSL_LIBRARY_VERSION_TLS_1_3);
+        return SECSuccess;
     }
 
     /* Server side - consume client data and register server sender. */
