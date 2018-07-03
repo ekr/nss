@@ -60,10 +60,16 @@ class Agent {
     if (rv != SECSuccess) return false;
 
     const SSLEKTKey ektKey = {
-      {0, 1, 2, 3},
-      4,
-      {4, 5, 6, 7, 8, 9},
-      6,
+      {
+        0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x05, 0x07,
+        0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
+      },
+      16,
+      {
+        0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x15, 0x17,
+        0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d,
+      },
+      14,
       0xA0A0,
       0xB0B0B0
     };
@@ -136,6 +142,9 @@ class Agent {
 
       std::cout << "SRTP cipher: " << srtp << std::endl;
 
+      /*
+      // TODO(RLB): Extract the client write key and send it to the MD
+
       DataBuffer d;
       MarshallEKTPacket(ektKey, &d);
 
@@ -145,6 +154,7 @@ class Agent {
         return false;
       }
       std::cout << "Wrote EKT key\n";
+      */
     } else {
       auto err = PR_GetError();
       if (err == PR_WOULD_BLOCK_ERROR) {
