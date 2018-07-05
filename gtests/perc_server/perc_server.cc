@@ -104,7 +104,8 @@ class Agent {
     size_t index = 0;
     size_t fullKeySize = 0;
     size_t halfKeySize = 0;
-    size_t saltSize = 12;
+    size_t fullSaltSize = key.srtpMasterSaltLength;
+    size_t halfSaltSize = fullSaltSize / 2;
 
     // Check which SRTP cipher is in use
     uint16_t cipher;
@@ -137,10 +138,11 @@ class Agent {
     // Extract the client and server keys
     //
     // Recall initial extract has the form:
-    //   client_write_key || server_write_key || client_salt || server_salt
+    //   client_k_i | client_k_o | server_k_i | server_k_o |
+    //   client_s_i | client_s_o | server_s_i | server_s_o
     DataBuffer everything;
     const std::string label = "EXTRACTOR-dtls_srtp";
-    const size_t exportSize = 2 * (fullKeySize + saltSize);
+    const size_t exportSize = 2 * (fullKeySize + fullSaltSize);
     everything.Allocate(exportSize);
     rv = SSL_ExportKeyingMaterial(ssl_fd_.get(),
                                   label.c_str(), label.size(), false,
@@ -157,8 +159,9 @@ class Agent {
     // Splice() won't work unless this has a non-null buffer
     nothing.Allocate(1);
     nothing.Truncate(0);
+    clientWriteKey.Splice(nothing, 0, halfKeySize);
     clientWriteKey.Truncate(halfKeySize);
-    serverWriteKey.Splice(nothing, 0, fullKeySize);
+    serverWriteKey.Splice(nothing, 0, fullKeySize + halfKeySize);
     serverWriteKey.Truncate(halfKeySize);
 
     // Encode the packet
@@ -168,8 +171,8 @@ class Agent {
     index = buffer->Write(index, clientWriteKey.data(), clientWriteKey.len());
     index = buffer->Write(index, serverWriteKey.len(), 1);
     index = buffer->Write(index, serverWriteKey.data(), serverWriteKey.len());
-    index = buffer->Write(index, saltSize, 1);
-    index = buffer->Write(index, key.srtpMasterSalt, saltSize);
+    index = buffer->Write(index, halfSaltSize, 1);
+    index = buffer->Write(index, key.srtpMasterSalt + halfSaltSize, halfSaltSize);
     return true;
   }
 
