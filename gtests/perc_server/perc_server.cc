@@ -89,27 +89,88 @@ class Agent {
   }
 
 
-  // Create the EKT Packet to send out.
+  // Create the SRTP keys packet to send out.
   //
   // I am using the ad-hoc structure
   //
   // struct {
-  //   uint8 marker == 0xff
-  //   opaque ektKey<0..2^8-1>;
-  //   opaque srtpMasterSalt<0..2^8-1>;
-  //   uint16 ektSPI;
-  //   uint32 ektTTL;
+  //   uint8 marker = 0xff;
+  //   uint16 profile;
+  //   opaque client_write_key<0..2^8-1>;
+  //   opaque server_write_key<0..2^8-1>;
+  //   opaque master_salt<0..2^8-1>;
   // }
-  void MarshallEKTPacket(const SSLEKTKey& key, DataBuffer* buffer) {
+  bool MarshalSRTPKeys(const SSLEKTKey& key, DataBuffer* buffer) {
     size_t index = 0;
+    size_t fullKeySize = 0;
+    size_t halfKeySize = 0;
+    size_t saltSize = 12;
 
+    // Check which SRTP cipher is in use
+    uint16_t cipher;
+    auto rv = SSL_GetSRTPCipher(ssl_fd_.get(), &cipher);
+    if (rv != SECSuccess) {
+      return false;
+    }
+
+    switch (cipher) {
+      case SRTP_AEAD_AES_128_GCM:
+        fullKeySize = 16;
+        halfKeySize = 16;
+        break;
+      case SRTP_AEAD_AES_128_GCM_DOUBLE:
+        fullKeySize = 32;
+        halfKeySize = 16;
+        break;
+      case SRTP_AEAD_AES_256_GCM:
+        fullKeySize = 32;
+        halfKeySize = 32;
+        break;
+      case SRTP_AEAD_AES_256_GCM_DOUBLE:
+        fullKeySize = 64;
+        halfKeySize = 32;
+        break;
+      default:
+        return false;
+    }
+
+    // Extract the client and server keys
+    //
+    // Recall initial extract has the form:
+    //   client_write_key || server_write_key || client_salt || server_salt
+    DataBuffer everything;
+    const std::string label = "EXTRACTOR-dtls_srtp";
+    const size_t exportSize = 2 * (fullKeySize + saltSize);
+    everything.Allocate(exportSize);
+    rv = SSL_ExportKeyingMaterial(ssl_fd_.get(),
+                                  label.c_str(), label.size(), false,
+                                  nullptr, 0,
+                                  everything.data(), everything.len());
+    if (rv != SECSuccess) {
+      return false;
+    }
+
+    DataBuffer nothing;
+    DataBuffer clientWriteKey(everything);
+    DataBuffer serverWriteKey(everything);
+
+    // Splice() won't work unless this has a non-null buffer
+    nothing.Allocate(1);
+    nothing.Truncate(0);
+    clientWriteKey.Truncate(halfKeySize);
+    serverWriteKey.Splice(nothing, 0, fullKeySize);
+    serverWriteKey.Truncate(halfKeySize);
+
+    // Encode the packet
     index = buffer->Write(index, 0xff, 1);
-    index = buffer->Write(index, key.ektKeyLength, 1);
-    index = buffer->Write(index, key.ektKeyValue, key.ektKeyLength);
-    index = buffer->Write(index, key.srtpMasterSaltLength, 1);
-    index = buffer->Write(index, key.srtpMasterSalt, key.srtpMasterSaltLength);
-    index = buffer->Write(index, key.ektSPI, 2);
-    index = buffer->Write(index, key.ektTTL, 4);
+    index = buffer->Write(index, cipher, 2);
+    index = buffer->Write(index, clientWriteKey.len(), 1);
+    index = buffer->Write(index, clientWriteKey.data(), clientWriteKey.len());
+    index = buffer->Write(index, serverWriteKey.len(), 1);
+    index = buffer->Write(index, serverWriteKey.data(), serverWriteKey.len());
+    index = buffer->Write(index, saltSize, 1);
+    index = buffer->Write(index, key.srtpMasterSalt, saltSize);
+    return true;
   }
 
   bool NewData(const uint8_t* buf, size_t len) {
@@ -143,19 +204,18 @@ class Agent {
 
       std::cout << "SRTP cipher: " << srtp << std::endl;
 
-      /*
-      // TODO(RLB): Extract the client write key and send it to the MD
-
       DataBuffer d;
-      MarshallEKTPacket(ektKey, &d);
+      if (!MarshalSRTPKeys(ektKey, &d)) {
+        std::cerr << "Couldn't marshal SRTP keys\n";
+        return false;
+      }
 
       auto n = socket_->Write(ssl_fd_.get(), d.data(), d.len());
       if (static_cast<size_t>(n) != d.len()) {
-        std::cerr << "Couldn't write EKT packet\n";
+        std::cerr << "Couldn't write SRTP keys\n";
         return false;
       }
-      std::cout << "Wrote EKT key\n";
-      */
+      std::cout << "Wrote SRTP keys\n";
     } else {
       auto err = PR_GetError();
       if (err == PR_WOULD_BLOCK_ERROR) {
