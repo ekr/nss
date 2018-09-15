@@ -36,13 +36,16 @@ SECStatus SSLExp_EnableESNI(PRFileDesc *fd, const PRUint8 *esniKeys,
                             unsigned int esniKeysLen, const char *dummySNI);
 
 void tls13_DestroyESNIKeys(sslESNIKeys *keys);
-SECStatus tls13_ComputeESNIExtension(sslSocket *ss);
-SECStatus tls13_ComputeESNIKeys(sslSocket *ss,
+SECStatus tls13_ClientSetupESNI(sslSocket *ss);
+SECStatus
+tls13_ComputeESNIKeys(const sslSocket *ss,
                       TLS13KeyShareEntry *entry,
                       sslKeyPair *keyPair,
                       const ssl3CipherSuiteDef *suite,
-                      PRUint8 *clientRandom,
-                                ssl3KeyMaterial *keyMat);
-
+                      const PRUint8 *esniKeysHash,
+                      const PRUint8 *keyShareBuf,
+                      unsigned int keyShareBufLen,
+                      const PRUint8 *clientRandom,
+                      ssl3KeyMaterial *keyMat);
 
 #endif

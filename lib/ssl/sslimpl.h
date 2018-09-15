@@ -37,6 +37,8 @@
 typedef struct sslSocketStr sslSocket;
 typedef struct sslNamedGroupDefStr sslNamedGroupDef;
 typedef struct sslESNIKeysStr sslESNIKeys;
+typedef struct sslEphemeralKeyPairStr sslEphemeralKeyPair;
+typedef struct TLS13KeyShareEntryStr TLS13KeyShareEntry;
 
 #include "sslencode.h"
 #include "sslexp.h"
@@ -561,11 +563,11 @@ typedef struct DTLSQueuedMessageStr {
     PRUint16 len;           /* The data length */
 } DTLSQueuedMessage;
 
-typedef struct TLS13KeyShareEntryStr {
+struct TLS13KeyShareEntryStr {
     PRCList link;                  /* The linked list link */
     const sslNamedGroupDef *group; /* The group for the entry */
     SECItem key_exchange;          /* The share itself */
-} TLS13KeyShareEntry;
+};
 
 typedef struct TLS13EarlyDataStr {
     PRCList link; /* The linked list link */
@@ -807,11 +809,11 @@ struct sslKeyPairStr {
     PRInt32 refCount; /* use PR_Atomic calls for this. */
 };
 
-typedef struct {
+struct sslEphemeralKeyPairStr {
     PRCList link;
     const sslNamedGroupDef *group;
     sslKeyPair *keys;
-} sslEphemeralKeyPair;
+};
 
 struct ssl3DHParamsStr {
     SSLNamedGroup name;

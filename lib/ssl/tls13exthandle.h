@@ -85,7 +85,7 @@ SECStatus tls13_ServerSendHrrCookieXtn(const sslSocket *ss,
                                        TLSExtensionData *xtnData,
                                        sslBuffer *buf, PRBool *added);
 SECStatus tls13_DecodeKeyShareEntry(const sslSocket *ss,
-                                    SECItem *data, TLS13KeyShareEntry **ksp);
+                                    sslReader *rdr, TLS13KeyShareEntry **ksp);
 PRUint32 tls13_SizeOfKeyShareEntry(const SECKEYPublicKey *pubKey);
 SECStatus tls13_EncodeKeyShareEntry(sslBuffer *buf,
                                     const sslEphemeralKeyPair *keyPair);
@@ -93,5 +93,6 @@ SECStatus tls13_ClientSendEsniXtn(const sslSocket *ss, TLSExtensionData *xtnData
                                   sslBuffer *buf, PRBool *added);
 SECStatus tls13_ServerHandleEsniXtn(const sslSocket *ss, TLSExtensionData *xtnData,
                                     SECItem *data);
+SECStatus tls13_ClientCheckEsniXtn(sslSocket *ss);
 
 #endif

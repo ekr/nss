@@ -134,21 +134,6 @@ const char keylogLabelExporterSecret[] = "EXPORTER_SECRET";
 PR_STATIC_ASSERT(SSL_LIBRARY_VERSION_MAX_SUPPORTED <=
                  SSL_LIBRARY_VERSION_TLS_1_3);
 
-/* Use this instead of FATAL_ERROR when no alert shall be sent. */
-#define LOG_ERROR(ss, prError)                                                     \
-    do {                                                                           \
-        SSL_TRC(3, ("%d: TLS13[%d]: fatal error %d in %s (%s:%d)",                 \
-                    SSL_GETPID(), ss->fd, prError, __func__, __FILE__, __LINE__)); \
-        PORT_SetError(prError);                                                    \
-    } while (0)
-
-/* Log an error and generate an alert because something is irreparably wrong. */
-#define FATAL_ERROR(ss, prError, desc)       \
-    do {                                     \
-        LOG_ERROR(ss, prError);              \
-        tls13_FatalError(ss, prError, desc); \
-    } while (0)
-
 void
 tls13_FatalError(sslSocket *ss, PRErrorCode prError, SSL3AlertDescription desc)
 {
@@ -356,16 +341,16 @@ tls13_ComputeHash(sslSocket *ss, SSL3Hashes *hashes,
 }
 
 SECStatus
-tls13_CreateKeyShare(sslSocket *ss, const sslNamedGroupDef *groupDef)
+tls13_CreateKeyShare(sslSocket *ss, const sslNamedGroupDef *groupDef,
+                     sslEphemeralKeyPair **keyPair)
 {
     SECStatus rv;
-    sslEphemeralKeyPair *keyPair = NULL;
     const ssl3DHParams *params;
 
     PORT_Assert(groupDef);
     switch (groupDef->keaType) {
         case ssl_kea_ecdh:
-            rv = ssl_CreateECDHEphemeralKeyPair(ss, groupDef, &keyPair);
+            rv = ssl_CreateECDHEphemeralKeyPair(ss, groupDef, keyPair);
             if (rv != SECSuccess) {
                 return SECFailure;
             }
@@ -373,7 +358,7 @@ tls13_CreateKeyShare(sslSocket *ss, const sslNamedGroupDef *groupDef)
         case ssl_kea_dh:
             params = ssl_GetDHEParams(groupDef);
             PORT_Assert(params->name != ssl_grp_ffdhe_custom);
-            rv = ssl_CreateDHEKeyPair(groupDef, params, &keyPair);
+            rv = ssl_CreateDHEKeyPair(groupDef, params, keyPair);
             if (rv != SECSuccess) {
                 return SECFailure;
             }
@@ -384,8 +369,21 @@ tls13_CreateKeyShare(sslSocket *ss, const sslNamedGroupDef *groupDef)
             return SECFailure;
     }
 
-    PR_APPEND_LINK(&keyPair->link, &ss->ephemeralKeyPairs);
     return rv;
+}
+
+SECStatus
+tls13_AddKeyShare(sslSocket *ss, const sslNamedGroupDef *groupDef)
+{
+    sslEphemeralKeyPair *keyPair = NULL;
+    SECStatus rv;
+
+    rv = tls13_CreateKeyShare(ss, groupDef, &keyPair);
+    if (rv != SECSuccess) {
+        return SECFailure;
+    }
+    PR_APPEND_LINK(&keyPair->link, &ss->ephemeralKeyPairs);
+    return SECSuccess;
 }
 
 SECStatus
@@ -422,7 +420,7 @@ tls13_SetupClientHello(sslSocket *ss)
     PORT_Assert(PR_CLIST_IS_EMPTY(&ss->ephemeralKeyPairs));
 
     /* Do encrypted SNI. This may create a key share as a side effect. */
-    rv = tls13_ComputeESNIExtension(ss);
+    rv = tls13_ClientSetupESNI(ss);
     if (rv != SECSuccess) {
         return SECFailure;
     }
@@ -435,7 +433,7 @@ tls13_SetupClientHello(sslSocket *ss)
                 if (!ss->namedGroupPreferences[i]) {
                     continue;
                 }
-                rv = tls13_CreateKeyShare(ss, ss->namedGroupPreferences[i]);
+                rv = tls13_AddKeyShare(ss, ss->namedGroupPreferences[i]);
                 if (rv != SECSuccess) {
                     return SECFailure;
                 }
@@ -2034,7 +2032,7 @@ tls13_HandleClientKeyShare(sslSocket *ss, TLS13KeyShareEntry *peerShare)
     tls13_SetKeyExchangeType(ss, peerShare->group);
 
     /* Generate our key */
-    rv = tls13_CreateKeyShare(ss, peerShare->group);
+    rv = tls13_AddKeyShare(ss, peerShare->group);
     if (rv != SECSuccess) {
         return rv;
     }
@@ -3637,7 +3635,22 @@ tls13_HandleEncryptedExtensions(sslSocket *ss, PRUint8 *b, PRUint32 length)
         ss->xtnData.nextProto.data = NULL;
         ss->xtnData.nextProtoState = SSL_NEXT_PROTO_NO_SUPPORT;
     }
-    rv = ssl3_HandleExtensions(ss, &b, &length, ssl_hs_encrypted_extensions);
+
+    rv = ssl3_ParseExtensions(ss, &b, &length);
+    if (rv != SECSuccess) {
+        return SECFailure; /* Error code set below */
+    }
+
+    /* If we sent ESNI, check the nonce. */
+    if (ss->xtnData.esniPrivateKey) {
+        rv = tls13_ClientCheckEsniXtn(ss);
+        if (rv != SECSuccess) {
+            return SECFailure;
+        }
+    }
+
+    /* Handle the rest of the extensions. */
+    rv = ssl3_HandleParsedExtensions(ss, ssl_hs_encrypted_extensions);
     if (rv != SECSuccess) {
         return SECFailure; /* Error code set below */
     }
@@ -4770,7 +4783,7 @@ static const struct {
     { ssl_tls13_supported_versions_xtn, _M3(client_hello, server_hello,
                                             hello_retry_request) },
     { ssl_record_size_limit_xtn, _M2(client_hello, encrypted_extensions) },
-    { ssl_tls13_encrypted_sni_xtn, _M1(client_hello) }
+    { ssl_tls13_encrypted_sni_xtn, _M2(client_hello, encrypted_extensions) }
 };
 
 tls13ExtensionStatus

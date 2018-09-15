@@ -18,6 +18,25 @@
 #include "tls13esni.h"
 #include "tls13exthandle.h" /* For tls13_ServerSendStatusRequestXtn. */
 
+PRBool
+ssl_ShouldSendSNIExtension(const sslSocket *ss, const char *url)
+{
+    PRNetAddr netAddr;
+
+    /* must have a hostname */
+    if (!url || !url[0]) {
+        return PR_FALSE;
+    }
+    /* must not be an IPv4 or IPv6 address */
+    if (PR_SUCCESS == PR_StringToNetAddr(url, &netAddr)) {
+        /* is an IP address (v4 or v6) */
+        return PR_FALSE;
+    }
+
+    return PR_TRUE;
+
+}
+
 /* Format an SNI extension, using the name from the socket's URL,
  * unless that name is a dotted decimal string.
  * Used by client and server.
@@ -25,21 +44,11 @@
 SECStatus
 ssl3_ClientFormatServerNameXtn(const sslSocket *ss, const char *url,
                                TLSExtensionData *xtnData,
-                               sslBuffer *buf, PRBool *added)
+                               sslBuffer *buf)
 {
     unsigned int len;
-    PRNetAddr netAddr;
     SECStatus rv;
 
-    /* must have a hostname */
-    if (!url || !url[0]) {
-        return SECSuccess;
-    }
-    /* must not be an IPv4 or IPv6 address */
-    if (PR_SUCCESS == PR_StringToNetAddr(url, &netAddr)) {
-        /* is an IP address (v4 or v6) */
-        return SECSuccess;
-    }
     len = PORT_Strlen(url);
     /* length of server_name_list */
     rv = sslBuffer_AppendNumber(buf, len + 3, 2);
@@ -57,7 +66,6 @@ ssl3_ClientFormatServerNameXtn(const sslSocket *ss, const char *url,
         return SECFailure;
     }
 
-    *added = PR_TRUE;
     return SECSuccess;
 }
 
@@ -65,12 +73,27 @@ SECStatus
 ssl3_ClientSendServerNameXtn(const sslSocket *ss, TLSExtensionData *xtnData,
                              sslBuffer *buf, PRBool *added)
 {
+    SECStatus rv;
+
     const char *url = ss->url;
 
-    if (xtnData->esniBuf.len != 0) {
+    /* We only make an ESNI private key if we are going to
+     * send ESNI. */
+    if (ss->xtnData.esniPrivateKey != NULL) {
         url = ss->peerEsniKeys->dummySni;
     }
-    return ssl3_ClientFormatServerNameXtn(ss, url, xtnData, buf, added);
+
+    if (!ssl_ShouldSendSNIExtension(ss, url)) {
+        return SECSuccess;
+    }
+
+    rv = ssl3_ClientFormatServerNameXtn(ss, url, xtnData, buf);
+    if (rv != SECSuccess) {
+        return SECFailure;
+    }
+
+    *added = PR_TRUE;
+    return SECSuccess;
 }
 
 SECStatus

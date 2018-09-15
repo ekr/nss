@@ -3854,6 +3854,9 @@ ssl_CopyEphemeralKeyPair(sslEphemeralKeyPair *keyPair)
 void
 ssl_FreeEphemeralKeyPair(sslEphemeralKeyPair *keyPair)
 {
+    if (!keyPair)
+        return;
+
     ssl_FreeKeyPair(keyPair->keys);
     PR_REMOVE_LINK(&keyPair->link);
     PORT_Free(keyPair);
@@ -3963,7 +3966,7 @@ ssl_NewSocket(PRBool makeLocks, SSLProtocolVariant protocolVariant)
 
     ss->esniPrivateKey = NULL;
     ss->peerEsniKeys = NULL;
-    
+
     if (makeLocks) {
         rv = ssl_MakeLocks(ss);
         if (rv != SECSuccess)

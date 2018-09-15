@@ -340,8 +340,6 @@ ssl3_ParseExtensions(sslSocket *ss, PRUint8 **b, PRUint32 *length)
             return SECFailure; /* alert already sent */
         }
 
-        SSL_TRC(10, ("%d: SSL3[%d]: parsing extension %d",
-                     SSL_GETPID(), ss->fd, extension_type));
         /* Check whether an extension has been sent multiple times. */
         for (cursor = PR_NEXT_LINK(&ss->ssl3.hs.remoteExtensions);
              cursor != &ss->ssl3.hs.remoteExtensions;
@@ -358,6 +356,9 @@ ssl3_ParseExtensions(sslSocket *ss, PRUint8 **b, PRUint32 *length)
         if (rv != SECSuccess) {
             return rv; /* alert already sent */
         }
+
+        SSL_TRC(10, ("%d: SSL3[%d]: parsed extension %d len=%u",
+                     SSL_GETPID(), ss->fd, extension_type, extension_data.len));
 
         extension = PORT_ZNew(TLSExtension);
         if (!extension) {
@@ -411,7 +412,9 @@ ssl_CallExtensionHandler(sslSocket *ss, SSLHandshakeType handshakeMessage,
         /* Find extension_type in table of Hello Extension Handlers. */
         for (; handler->ex_handler != NULL; ++handler) {
             if (handler->ex_type == extension->type) {
-                rv = (*handler->ex_handler)(ss, &ss->xtnData, &extension->data);
+                SECItem tmp = extension->data;
+
+                rv = (*handler->ex_handler)(ss, &ss->xtnData, &tmp);
                 break;
             }
         }
@@ -962,7 +965,7 @@ ssl3_DestroyExtensionData(TLSExtensionData *xtnData)
         xtnData->certReqAuthorities.arena = NULL;
     }
     PORT_Free(xtnData->advertised);
-    SECITEM_FreeItem(&xtnData->esniBuf, PR_FALSE);
+    ssl_FreeEphemeralKeyPair(xtnData->esniPrivateKey);
 }
 
 /* Free everything that has been allocated and then reset back to
