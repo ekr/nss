@@ -226,7 +226,7 @@ PrintUsageHeader()
             "  [-r N] [-w passwd] [-W pwfile] [-q [-t seconds]]\n"
             "  [-I groups] [-J signatureschemes]\n"
             "  [-A requestfile] [-L totalconnections] [-P {client,server}]\n"
-            "  [-N encryptedSniKeys]\n [-Q]\n"
+            "  [-N encryptedSniKeys] [-Q]\n"
             "\n",
             progName);
 }
