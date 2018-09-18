@@ -254,6 +254,9 @@ SSLExp_SetESNIKeyPair(PRFileDesc *fd,
     sslSocket *ss;
     SECStatus rv;
     sslESNIKeys *keys = NULL;
+    /* Way too big but we don't have a separate 1.3 list. */
+    PRUint8 csBuf[ssl_V3_SUITES_IMPLEMENTED * 2];
+    sslBuffer cs = SSL_BUFFER(csBuf);
 
     ss = ssl_FindSocket(fd);
     if (!ss) {
@@ -279,6 +282,11 @@ SSLExp_SetESNIKeyPair(PRFileDesc *fd,
             /* Illegal suite. */
             return SECFailure;
         }
+
+        rv = sslBuffer_AppendNumber(&cs, cipherSuites[i], 2);
+        if (rv != SECSuccess) {
+            return SECFailure;
+        }
     }
 
     keys = PORT_ZNew(sslESNIKeys);
@@ -297,6 +305,13 @@ SSLExp_SetESNIKeyPair(PRFileDesc *fd,
     /* Copy the key record. */
     rv = SECITEM_MakeItem(NULL, &keys->data,
                           (const unsigned char *)record, recordLen);
+    if (rv != SECSuccess) {
+        goto loser;
+    }
+
+    /* Record cipher suites. */
+    rv = SECITEM_MakeItem(NULL, &keys->suites,
+                          SSL_BUFFER_BASE(&cs), SSL_BUFFER_LEN(&cs));
     if (rv != SECSuccess) {
         goto loser;
     }

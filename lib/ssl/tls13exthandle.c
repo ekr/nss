@@ -1331,7 +1331,26 @@ tls13_ServerHandleEsniXtn(const sslSocket *ss, TLSExtensionData *xtnData,
         return SECFailure;
     }
 
-    /* TODO(ekr@rtfm.com): check against the suite list for ESNI */
+    /* Check against the suite list for ESNI */
+    PRBool csMatch = PR_FALSE;
+    sslReader csrdr = SSL_READER(ss->esniKeys->suites.data,
+                                 ss->esniKeys->suites.len);
+    while (SSL_READER_REMAINING(&csrdr)) {
+        PRUint64 asuite;
+
+        rv = sslRead_ReadNumber(&csrdr, 2, &asuite);
+        if (rv != SECSuccess) {
+            return SECFailure;
+        }
+        if (asuite == suite) {
+            csMatch = PR_TRUE;
+            break;
+        }
+    }
+    if (!csMatch) {
+        goto loser;
+    }
+
     suiteDef = ssl_LookupCipherSuiteDef(suite);
     PORT_Assert(suiteDef);
     if (!suiteDef) {
