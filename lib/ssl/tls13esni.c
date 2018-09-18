@@ -19,7 +19,6 @@
  *  } ESNIKeys;
  */
 #include "nss.h"
-#include "nssb64.h"
 #include "pk11func.h"
 #include "ssl.h"
 #include "sslproto.h"

@@ -28,6 +28,7 @@
 #include "prio.h"
 #include "prnetdb.h"
 #include "nss.h"
+#include "nssb64.h"
 #include "ocsp.h"
 #include "ssl.h"
 #include "sslproto.h"
@@ -1428,9 +1429,17 @@ run()
     }
 
     if (encryptedSNIKeys) {
-        rv = SSL_EnableESNI(s, encryptedSNIKeys,
-                            strlen(encryptedSNIKeys),
+        SECItem esniKeysBin;
+
+        if (!NSSBase64_DecodeBuffer(NULL, &esniKeysBin, encryptedSNIKeys,
+                                    strlen(encryptedSNIKeys))) {
+            error = 1;
+            goto done;
+        }
+
+        rv = SSL_EnableESNI(s, esniKeysBin.data, esniKeysBin.len,
                             "dummy.invalid");
+        SECITEM_FreeItem(&esniKeysBin, PR_FALSE);
         if (rv < 0) {
             SECU_PrintError(progName, "SSL_EnableESNI failed");
             error = 1;
