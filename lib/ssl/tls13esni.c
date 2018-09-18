@@ -151,107 +151,130 @@ loser:
 /* Encode an ESNI keys structure. We only allow one key
  * share. */
 SECStatus
-tls13_EncodeESNIKeys(sslSocket *ss, const sslEphemeralKeyPair *keyPair,
-                     PRUint16 pad, PRUint64 notBefore, PRUint64 notAfter,
-                     sslBuffer *b)
+SSLExp_EncodeESNIKeys(PRUint16 *cipherSuites, unsigned int cipherSuiteCount,
+                      SSLNamedGroup group, SECKEYPublicKey *pubKey,
+                      PRUint16 pad, PRUint64 notBefore, PRUint64 notAfter,
+                      PRUint8 *out, unsigned int *outlen, unsigned int maxlen)
 {
-    unsigned int savedOffset1, savedOffset2;
+    unsigned int savedOffset1;
     PRUint8 sha256[32];
     SECStatus rv;
+    sslBuffer b = SSL_BUFFER_EMPTY;
 
-    rv = sslBuffer_Skip(b, 4, &savedOffset1);
+    rv = sslBuffer_Skip(&b, 4, &savedOffset1);
     if (rv != SECSuccess) {
-        return SECFailure;
+        goto loser;
     }
 
     /* Length of vector. */
     rv = sslBuffer_AppendNumber(
-        b, tls13_SizeOfKeyShareEntry(keyPair->keys->pubKey), 2);
+        &b, tls13_SizeOfKeyShareEntry(pubKey), 2);
     if (rv != SECSuccess) {
-        return SECFailure;
+        goto loser;
     }
 
     /* Our one key share. */
-    rv = tls13_EncodeKeyShareEntry(b, keyPair);
+    rv = tls13_EncodeKeyShareEntry(&b, group, pubKey);
     if (rv != SECSuccess) {
-        return SECFailure;
+        goto loser;
     }
 
     /* Cipher suites. */
-    (void)ssl3_config_match_init(ss);
-    rv = sslBuffer_Skip(b, 2, &savedOffset2);
+    rv = sslBuffer_AppendNumber(&b, 2, cipherSuiteCount * 2);
     if (rv != SECSuccess) {
-        return SECFailure;
+        goto loser;
     }
-    for (unsigned int i = 0; i < ssl_V3_SUITES_IMPLEMENTED; i++) {
-        SSLVersionRange vrange = {SSL_LIBRARY_VERSION_TLS_1_3,
-                                  SSL_LIBRARY_VERSION_TLS_1_3};
-
-        /* Only send cipher suites that are valid in TLS 1.3 */
-        ssl3CipherSuiteCfg *suite = &ss->cipherSuites[i];
-        if (ssl3_config_match(suite, ss->ssl3.policy, &vrange, ss)) {
-            rv = sslBuffer_AppendNumber(b, suite->cipher_suite,
-                                        sizeof(ssl3CipherSuite));
-            if (rv != SECSuccess) {
-                return SECFailure;
-            }
+    for (unsigned int i = 0; i < cipherSuiteCount; i++) {
+        rv = sslBuffer_AppendNumber(&b, cipherSuites[i], 2);
+        if (rv != SECSuccess) {
+            goto loser;
         }
-    }
-    rv = sslBuffer_InsertLength(b, savedOffset2, 2);
-    if (rv != SECSuccess) {
-        return SECFailure;
     }
 
     /* Padding Length. Fixed for now. */
-    rv = sslBuffer_AppendNumber(b, pad, 2);
+    rv = sslBuffer_AppendNumber(&b, pad, 2);
     if (rv != SECSuccess) {
-        return SECFailure;
+        goto loser;
     }
 
     /* Start time. */
-    rv = sslBuffer_AppendNumber(b, notBefore, 8);
+    rv = sslBuffer_AppendNumber(&b, notBefore, 8);
     if (rv != SECSuccess) {
-        return SECFailure;
+        goto loser;
     }
 
     /* End time. */
-    rv = sslBuffer_AppendNumber(b, notAfter, 8);
+    rv = sslBuffer_AppendNumber(&b, notAfter, 8);
     if (rv != SECSuccess) {
-        return SECFailure;
+        goto loser;
     }
 
     /* No extensions. */
-    rv = sslBuffer_AppendNumber(b, 0, 2);
+    rv = sslBuffer_AppendNumber(&b, 0, 2);
     if (rv != SECSuccess) {
-        return SECFailure;
+        goto loser;
     }
 
     /* Now compute the checksum. */
     rv = PK11_HashBuf(ssl3_HashTypeToOID(ssl_hash_sha256), sha256,
-                      SSL_BUFFER_BASE(b) + 4,
-                      SSL_BUFFER_LEN(b) - 4);
+                      SSL_BUFFER_BASE(&b) + 4,
+                      SSL_BUFFER_LEN(&b) - 4);
     if (rv != SECSuccess) {
         PORT_Assert(PR_FALSE);
-        return SECFailure;
+        goto loser;
     }
-    PORT_Memcpy(SSL_BUFFER_BASE(b), sha256, 4);
+    PORT_Memcpy(SSL_BUFFER_BASE(&b), sha256, 4);
 
+    if (SSL_BUFFER_LEN(&b) > maxlen) {
+        PORT_SetError(SEC_ERROR_INVALID_ARGS);
+        goto loser;
+    }
+    PORT_Memcpy(out, SSL_BUFFER_BASE(&b), SSL_BUFFER_LEN(&b));
+    *outlen = SSL_BUFFER_LEN(&b);
+
+    sslBuffer_Clear(&b);
     return SECSuccess;
+loser:
+    sslBuffer_Clear(&b);
+    return SECFailure;
 }
 
 SECStatus
 SSLExp_SetESNIKeyPair(PRFileDesc *fd,
+                      SSLNamedGroup group,
                       SECKEYPrivateKey *privKey,
                       SECKEYPublicKey *pubKey,
-                      SSLNamedGroup group)
+                      const PRUint16 *cipherSuites,
+                      unsigned int cipherSuitesCount,
+                      const char *record, unsigned int recordLen)
 {
     sslSocket *ss;
+    SECStatus rv;
 
     ss = ssl_FindSocket(fd);
     if (!ss) {
         SSL_DBG(("%d: SSL[%d]: bad socket in %s",
                  SSL_GETPID(), fd, __FUNCTION__));
         return SECFailure;
+    }
+
+    /* Check the cipher suites. */
+    (void)ssl3_config_match_init(ss);
+    /* Make sure the cipher suite is OK. */
+    SSLVersionRange vrange = {SSL_LIBRARY_VERSION_TLS_1_3,
+                              SSL_LIBRARY_VERSION_TLS_1_3};
+    for (unsigned int i = 0; i < cipherSuitesCount; ++i) {
+        const ssl3CipherSuiteCfg *suiteCfg =
+                ssl_LookupCipherSuiteCfg(cipherSuites[i], ss->cipherSuites);
+        if (!suiteCfg) {
+            /* Illegal suite. */
+            return SECFailure;
+        }
+
+        if (!ssl3_config_match(suiteCfg, ss->ssl3.policy, &vrange, ss)) {
+            /* Illegal suite. */
+            return SECFailure;
+        }
     }
 
     /* This call checks that the group is non-null. */
@@ -261,81 +284,27 @@ SSLExp_SetESNIKeyPair(PRFileDesc *fd,
     if (!ss->esniPrivateKey) {
         return SECFailure;
     }
+
+    /* Copy the key record. */
+    rv = SECITEM_MakeItem(NULL, &ss->esniKeysRecord,
+                          (const unsigned char *)record, recordLen);
+    if (rv != SECSuccess) {
+        return SECFailure;
+    }
+
     return SECSuccess;
 }
 
-SECStatus
-SSLExp_GenerateESNIKeyPair(PRFileDesc *fd,
-                           SSLNamedGroup group,
-                           SECKEYPrivateKey **privKey,
-                           SECKEYPublicKey **pubKey,
-                           PRUint8 *out,
-                           unsigned int *outlen,
-                           unsigned int maxlen)
-{
-    sslSocket *ss;
-    SECStatus rv;
-    sslEphemeralKeyPair *keyPair = NULL;
-    PRUint8 tmp[1024];
-    sslBuffer buf = SSL_BUFFER_FIXED(tmp, sizeof(tmp));
-    const sslNamedGroupDef *groupDef;
-
-    ss = ssl_FindSocket(fd);
-    if (!ss) {
-        SSL_DBG(("%d: SSL[%d]: bad socket in %s",
-                 SSL_GETPID(), fd, __FUNCTION__));
-        return SECFailure;
-    };
-
-    groupDef = ssl_LookupNamedGroup(group);
-    if (!groupDef || (groupDef->keaType != ssl_kea_ecdh)) {
-        PORT_SetError(SEC_ERROR_INVALID_ARGS);
-        return SECFailure;
-    }
-
-    rv = ssl_CreateECDHEphemeralKeyPair(ss, groupDef, &keyPair);
-    if (rv != SECSuccess) {
-        return SECFailure;
-    }
-
-    *pubKey = SECKEY_CopyPublicKey(keyPair->keys->pubKey);
-    *privKey = SECKEY_CopyPrivateKey(keyPair->keys->privKey);
-    if (!*pubKey || !*privKey) {
-        return SECFailure;
-    }
-
-
-    /* Now marshall */
-    /* TODO(ekr@rtfm.com): Fill in the values. */
-    rv = tls13_EncodeESNIKeys(ss, keyPair, 100, 0, 0, &buf);
-    ssl_FreeEphemeralKeyPair(keyPair);
-    if (rv != SECSuccess) {
-        return SECFailure;
-    }
-
-    rv = SECITEM_MakeItem(NULL, &ss->esniKeysRecord, SSL_BUFFER_BASE(&buf),
-                          SSL_BUFFER_LEN(&buf));
-    if (rv != SECSuccess) {
-        return SECFailure;
-    }
-
-    if (!NSSBase64_EncodeItem(NULL, (char *)out, maxlen, &ss->esniKeysRecord)) {
-        return SECFailure;
-    }
-    *outlen = strlen((char *)out);
-
-    return SECSuccess;
-}
 
 SECStatus
 SSLExp_EnableESNI(PRFileDesc *fd,
-                  const PRUint8 *esniKeys,
+                  PRUint8 *esniKeys,
                   unsigned int esniKeysLen,
                   const char *dummySNI)
 {
     sslSocket *ss;
     sslESNIKeys *keys = NULL;
-    SECItem data = { siBuffer, NULL, 0 };
+    SECItem data = { siBuffer, esniKeys, esniKeysLen };
     SECStatus rv;
 
     ss = ssl_FindSocket(fd);
@@ -345,11 +314,7 @@ SSLExp_EnableESNI(PRFileDesc *fd,
         return SECFailure;
     }
 
-    if (!NSSBase64_DecodeBuffer(NULL, &data, (char *)esniKeys, esniKeysLen)) {
-        return SECFailure;
-    }
     rv = tls13_DecodeESNIKeys(ss, &data, &keys);
-    SECITEM_FreeItem(&data, PR_FALSE);
     if (rv != SECSuccess) {
         return SECFailure;
     }

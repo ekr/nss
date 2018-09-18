@@ -4043,8 +4043,8 @@ struct {
     EXP(SetResumptionToken),
     EXP(GetResumptionTokenInfo),
     EXP(DestroyResumptionTokenInfo),
-    EXP(GenerateESNIKeyPair),
     EXP(SetESNIKeyPair),
+    EXP(EncodeESNIKeys),
     EXP(EnableESNI),
 #endif
     { "", NULL }

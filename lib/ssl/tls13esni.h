@@ -19,21 +19,21 @@ struct sslESNIKeysStr {
     PRUint64 notAfter;
 };
 
-SECStatus SSLExp_SetESNIKeyPair(PRFileDesc *fd,
-                                SECKEYPrivateKey *privKey,
-                                SECKEYPublicKey *pubKey,
-                                SSLNamedGroup group);
+SECStatus
+SSLExp_SetESNIKeyPair(PRFileDesc *fd,
+                      SSLNamedGroup group,
+                      SECKEYPrivateKey *privKey,
+                      SECKEYPublicKey *pubKey,
+                      const PRUint16 *cipherSuites,
+                      unsigned int cipherSuitesCount,
+                      const char *record, unsigned int recordLen);
 
-SECStatus SSLExp_GenerateESNIKeyPair(PRFileDesc *fd,
-                                     SSLNamedGroup group,
-                                     SECKEYPrivateKey **privKey,
-                                     SECKEYPublicKey **pubKey,
-                                     PRUint8 *out,
-                                     unsigned int *outlen,
-                                     unsigned int maxlen);
-
-SECStatus SSLExp_EnableESNI(PRFileDesc *fd, const PRUint8 *esniKeys,
+SECStatus SSLExp_EnableESNI(PRFileDesc *fd, PRUint8 *esniKeys,
                             unsigned int esniKeysLen, const char *dummySNI);
+SECStatus SSLExp_EncodeESNIKeys(PRUint16 *cipherSuites, unsigned int cipherSuiteCount,
+                                SSLNamedGroup group, SECKEYPublicKey *pubKey,
+                                PRUint16 pad, PRUint64 notBefore, PRUint64 notAfter,
+                                PRUint8 *out, unsigned int *outlen, unsigned int maxlen);
 
 void tls13_DestroyESNIKeys(sslESNIKeys *keys);
 SECStatus tls13_ClientSetupESNI(sslSocket *ss);

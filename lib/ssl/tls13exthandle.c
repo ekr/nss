@@ -88,13 +88,13 @@ tls13_SizeOfKeyShareEntry(const SECKEYPublicKey *pubKey)
 }
 
 SECStatus
-tls13_EncodeKeyShareEntry(sslBuffer *buf, const sslEphemeralKeyPair *keyPair)
+tls13_EncodeKeyShareEntry(sslBuffer *buf, SSLNamedGroup group,
+                          SECKEYPublicKey *pubKey)
 {
     SECStatus rv;
-    SECKEYPublicKey *pubKey = keyPair->keys->pubKey;
     unsigned int size = tls13_SizeOfKeyShareEntry(pubKey);
 
-    rv = sslBuffer_AppendNumber(buf, keyPair->group->name, 2);
+    rv = sslBuffer_AppendNumber(buf, group, 2);
     if (rv != SECSuccess)
         return rv;
     rv = sslBuffer_AppendNumber(buf, size - 4, 2);
@@ -148,7 +148,9 @@ tls13_ClientSendKeyShareXtn(const sslSocket *ss, TLSExtensionData *xtnData,
          cursor != &ss->ephemeralKeyPairs;
          cursor = PR_NEXT_LINK(cursor)) {
         sslEphemeralKeyPair *keyPair = (sslEphemeralKeyPair *)cursor;
-        rv = tls13_EncodeKeyShareEntry(buf, keyPair);
+        rv = tls13_EncodeKeyShareEntry(buf,
+                                       keyPair->group->name,
+                                       keyPair->keys->pubKey);
         if (rv != SECSuccess) {
             return SECFailure;
         }
@@ -381,7 +383,8 @@ tls13_ServerSendKeyShareXtn(const sslSocket *ss, TLSExtensionData *xtnData,
 
     keyPair = (sslEphemeralKeyPair *)PR_NEXT_LINK(&ss->ephemeralKeyPairs);
 
-    rv = tls13_EncodeKeyShareEntry(buf, keyPair);
+    rv = tls13_EncodeKeyShareEntry(buf, keyPair->group->name,
+                                   keyPair->keys->pubKey);
     if (rv != SECSuccess) {
         return SECFailure;
     }
@@ -1209,7 +1212,9 @@ tls13_ClientSendEsniXtn(const sslSocket *ss, TLSExtensionData *xtnData,
         return SECFailure;
     }
     keyShareBuf = SSL_BUFFER_NEXT(buf);
-    rv = tls13_EncodeKeyShareEntry(buf, xtnData->esniPrivateKey);
+    rv = tls13_EncodeKeyShareEntry(buf,
+                                   xtnData->esniPrivateKey->group->name,
+                                   xtnData->esniPrivateKey->keys->pubKey);
     if (rv != SECSuccess) {
         return SECFailure;
     }
@@ -1293,10 +1298,7 @@ tls13_ServerHandleEsniXtn(const sslSocket *ss, TLSExtensionData *xtnData,
     sslReader rdr = SSL_READER(data->data, data->len);
     PRUint64 suite;
     const ssl3CipherSuiteDef *suiteDef;
-    const ssl3CipherSuiteCfg *suiteCfg;
     sslReadBuffer buf;
-    SSLVersionRange vrange = {SSL_LIBRARY_VERSION_TLS_1_3,
-                              SSL_LIBRARY_VERSION_TLS_1_3};
     TLSExtension *keyShareExtension;
     TLS13KeyShareEntry *entry = NULL;
     ssl3KeyMaterial keyMat;
@@ -1329,16 +1331,7 @@ tls13_ServerHandleEsniXtn(const sslSocket *ss, TLSExtensionData *xtnData,
         return SECFailure;
     }
 
-    /* Make sure the cipher suite is OK. */
-    suiteCfg = ssl_LookupCipherSuiteCfg(suite, ss->cipherSuites);
-    if (!suiteCfg) {
-        /* Illegal suite. */
-        return SECFailure;
-    }
-    if (!ssl3_config_match(suiteCfg, ss->ssl3.policy, &vrange, ss)) {
-        /* Illegal suite. */
-        return SECFailure;
-    }
+    /* TODO(ekr@rtfm.com): check against the suite list for ESNI */
     suiteDef = ssl_LookupCipherSuiteDef(suite);
     PORT_Assert(suiteDef);
     if (!suiteDef) {

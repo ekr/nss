@@ -458,27 +458,35 @@ typedef SECStatus(PR_CALLBACK *SSLResumptionTokenCallback)(
  * See draft-rescorla-tls-esni.
  *
  */
-#define SSL_GenerateESNIKeyPair(fd, group, privKey, pubKey, out, outlen, maxlen) \
-    SSL_EXPERIMENTAL_API("SSL_GenerateESNIKeyPair",\
-        (PRFileDesc * _fd,  \
-         SSLNamedGroup _group,                        \
-         SECKEYPrivateKey ** _privKey,                 \
-         SECKEYPublicKey ** _pubKey, PRUint8 *_out, unsigned int *_outlen, unsigned int _maxlen), \
-                         (fd, group, privKey, pubKey, out, outlen, maxlen))
-
-#define SSL_SetESNIKeyPair(fd, privKey, pubKey, group)        \
+#define SSL_SetESNIKeyPair(fd, group, privKey, pubKey, cipherSuites, cipherSuiteCount, record, recordLen)    \
     SSL_EXPERIMENTAL_API("SSL_SetESNIKeyPair",\
         (PRFileDesc * _fd,  \
-         SECKEYPrivateKey * _privKey,                 \
-         SECKEYPublicKey * _pubKey,                             \
-         SSLNamedGroup _group), (fd, privKey, pubKey, group))
+         SSLNamedGroup _group,                                \
+         SECKEYPrivateKey * _privKey,                         \
+         SECKEYPublicKey * _pubKey,                           \
+         const PRUint16 *_cipherSuites,                       \
+         unsigned int _cipherSuitesCount,                               \
+         const char *_record, unsigned int _recordLen),                 \
+                         (fd, group, privKey, pubKey, cipherSuites, cipherSuiteCount, record, recordLen))
 
 #define SSL_EnableESNI(fd, esniKeys, esniKeysLen, dummySNI) \
     SSL_EXPERIMENTAL_API("SSL_EnableESNI", \
         (PRFileDesc *_fd, \
-         const PRUint8* _esniKeys,   \
+         PRUint8 *_esniKeys,   \
          unsigned int _esniKeysLen, \
          const char *_dummySNI), (fd, esniKeys, esniKeysLen, dummySNI))
+
+#define SSL_EncodeESNIKeys(cipherSuites, cipherSuiteCount, \
+                           group, pubKey, pad, notBefore, notAfter,     \
+                           out, outlen, maxlen) \
+  SSL_EXPERIMENTAL_API("SSL_EncodeESNIKeys", \
+                       (PRUint16 *_cipherSuites, unsigned int _cipherSuiteCount, \
+                       SSLNamedGroup _group, SECKEYPublicKey *_pubKey,    \
+                       PRUint16 _pad, PRUint64 _notBefore, PRUint64 _notAfter, \
+                       PRUint8 *_out, unsigned int *_outlen, unsigned int _maxlen), \
+      (cipherSuites, cipherSuiteCount,                                  \
+       group, pubKey, pad, notBefore, notAfter,                         \
+       out, outlen, maxlen))
 
 /* Deprecated experimental APIs */
 #define SSL_UseAltServerHelloType(fd, enable) SSL_DEPRECATED_EXPERIMENTAL_API

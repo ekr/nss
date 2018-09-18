@@ -1428,7 +1428,7 @@ run()
     }
 
     if (encryptedSNIKeys) {
-        rv = SSL_EnableESNI(s, (const PRUint8*)encryptedSNIKeys,
+        rv = SSL_EnableESNI(s, encryptedSNIKeys,
                             strlen(encryptedSNIKeys),
                             "dummy.invalid");
         if (rv < 0) {

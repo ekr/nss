@@ -17,67 +17,77 @@ static const char *kDummySni("dummy.invalid");
 
 static void SetupESNI(const std::shared_ptr<TlsAgent>& client,
                       const std::shared_ptr<TlsAgent>& server) {
-    SECKEYPrivateKey *priv = nullptr;
-    SECKEYPublicKey *pub = nullptr;
-    uint8_t encoded[1024];
-    unsigned int encodedLen;
-    SECStatus rv = SSL_GenerateESNIKeyPair(
-        server->ssl_fd(),
-        ssl_grp_ec_curve25519,
-        &priv, &pub,
-        encoded, &encodedLen,
-        sizeof(encoded));
-    ASSERT_EQ(SECSuccess, rv);
-    ASSERT_GT(encodedLen, 0U);
-    std::cerr << "Encoded length " << encodedLen << std::endl;
+  auto groupDef = ssl_LookupNamedGroup(ssl_grp_ec_curve25519);
+  ASSERT_NE(nullptr, groupDef);
 
-    rv = SSL_SetESNIKeyPair(server->ssl_fd(),
-                            priv, pub,
-                            ssl_grp_ec_curve25519);
-    ASSERT_EQ(SECSuccess, rv);
+  SECKEYECParams ecParams = { siBuffer, NULL, 0 };
+  ASSERT_EQ(SECSuccess, ssl_NamedGroup2ECParams(NULL, groupDef, &ecParams));
 
-    rv = SSL_EnableESNI(client->ssl_fd(),
-                        encoded, encodedLen, kDummySni);
-    ASSERT_EQ(SECSuccess, rv);
+  SECKEYPublicKey *pub = nullptr;
+  SECKEYPrivateKey *priv = SECKEY_CreateECPrivateKey(&ecParams,
+                                                     &pub, nullptr);
+  char encoded[1024];
+  unsigned int encodedLen;
+  uint16_t cipherSuites[] = { TLS_AES_128_GCM_SHA256 };
+
+  SECStatus rv = SSL_EncodeESNIKeys(
+      cipherSuites, PR_ARRAY_SIZE(cipherSuites),
+      ssl_grp_ec_curve25519,
+      pub, 100, 0, 0,
+      encoded, &encodedLen, sizeof(encoded));
+  ASSERT_EQ(SECSuccess, rv);
+  ASSERT_GT(encodedLen, 0U);
+  std::cerr << "Encoded length " << encodedLen << std::endl;
+
+  rv = SSL_SetESNIKeyPair(server->ssl_fd(),
+                          ssl_grp_ec_curve25519,
+                          priv, pub,
+                          cipherSuites, PR_ARRAY_SIZE(cipherSuites),
+                          encoded, encodedLen);
+  ASSERT_EQ(SECSuccess, rv);
+
+  rv = SSL_EnableESNI(client->ssl_fd(),
+                      encoded, encodedLen, kDummySni);
+  ASSERT_EQ(SECSuccess, rv);
 }
 
 static void CheckSNIExtension(const DataBuffer& data) {
-    TlsParser parser(data.data(), data.len());
-    uint32_t tmp;
-    ASSERT_TRUE(parser.Read(&tmp, 2));
-    ASSERT_EQ(parser.remaining(), tmp);
-    ASSERT_TRUE(parser.Read(&tmp, 1));
-    ASSERT_EQ(0U, tmp); /* sni_nametype_hostname */
-    DataBuffer name;
-    ASSERT_TRUE(parser.ReadVariable(&name, 2));
-    ASSERT_EQ(0U, parser.remaining());
-    DataBuffer expected(reinterpret_cast<const uint8_t *>(kDummySni), strlen(kDummySni));
-    ASSERT_EQ(expected, name);
+  TlsParser parser(data.data(), data.len());
+  uint32_t tmp;
+  ASSERT_TRUE(parser.Read(&tmp, 2));
+  ASSERT_EQ(parser.remaining(), tmp);
+  ASSERT_TRUE(parser.Read(&tmp, 1));
+  ASSERT_EQ(0U, tmp); /* sni_nametype_hostname */
+  DataBuffer name;
+  ASSERT_TRUE(parser.ReadVariable(&name, 2));
+  ASSERT_EQ(0U, parser.remaining());
+  DataBuffer expected(reinterpret_cast<const uint8_t *>(kDummySni), strlen(kDummySni));
+  ASSERT_EQ(expected, name);
 }
 
 TEST_P(TlsAgentTestClient13, EncodeDecodeESNIKeys) {
-    EnsureInit();
-    SetupESNI(agent_, agent_);
+  EnsureInit();
+  SetupESNI(agent_, agent_);
 }
 
 TEST_P(TlsConnectTls13, ConnectESNI) {
-    EnsureTlsSetup();
-    SetupESNI(client_, server_);
-    auto filter = MakeTlsFilter<TlsExtensionCapture>(client_,
-                                                     ssl_server_name_xtn);
-    server_->SetSniCallback([](
-        TlsAgent *agent, const SECItem* srvNameAddr,
-        PRUint32 srvNameArrSize) -> int32_t {
-                                EXPECT_EQ(1U, srvNameArrSize);
-                                SECItem expected = {siBuffer,
-                                                    reinterpret_cast<unsigned char *>(const_cast<char *>("server")), 6 };
-                                EXPECT_TRUE(
-                                    !SECITEM_CompareItem(&expected,
-                                                         &srvNameAddr[0]));
-                                return SECSuccess;
-                            });
-    Connect();
-    CheckSNIExtension(filter->extension());
+  EnsureTlsSetup();
+  SetupESNI(client_, server_);
+  auto filter = MakeTlsFilter<TlsExtensionCapture>(client_,
+                                                   ssl_server_name_xtn);
+  server_->SetSniCallback([](
+      TlsAgent *agent, const SECItem* srvNameAddr,
+      PRUint32 srvNameArrSize) -> int32_t {
+                            EXPECT_EQ(1U, srvNameArrSize);
+                            SECItem expected = {siBuffer,
+                                                reinterpret_cast<unsigned char *>(const_cast<char *>("server")), 6 };
+                            EXPECT_TRUE(
+                                !SECITEM_CompareItem(&expected,
+                                                     &srvNameAddr[0]));
+                            return SECSuccess;
+                          });
+  Connect();
+  CheckSNIExtension(filter->extension());
 }
 
 }
