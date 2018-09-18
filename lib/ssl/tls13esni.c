@@ -4,8 +4,11 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#define TLS13_ESNI_VERSION 0xff01
+
 /*
  *  struct {
+ *      uint16 version;
  *      uint8 checksum[4];
  *      KeyShareEntry keys<4..2^16-1>;
  *      CipherSuite cipher_suites<2..2^16-2>;
@@ -35,6 +38,34 @@ tls13_DestroyESNIKeys(sslESNIKeys *keys) {
     // TODO(ekr@rtfm.com): Implement.
 }
 
+/* Checksum is a 4-byte array. */
+static SECStatus
+tls13_ComputeESNIKeysChecksum(const PRUint8 *buf, unsigned int len,
+                              PRUint8 *checksum)
+{
+    SECItem copy;
+    SECStatus rv;
+    PRUint8 sha256[32];
+
+    rv = SECITEM_MakeItem(NULL, &copy, buf, len);
+    if (rv != SECSuccess) {
+        return SECFailure;
+    }
+
+    /* Stomp the checksum. */
+    PORT_Memset(copy.data + 2, 0, 4);
+
+    rv = PK11_HashBuf(ssl3_HashTypeToOID(ssl_hash_sha256),
+                      sha256,
+                      copy.data, copy.len);
+    SECITEM_FreeItem(&copy, PR_FALSE);
+    if (rv != SECSuccess) {
+        return SECFailure;
+    }
+    PORT_Memcpy(checksum, sha256, 4);
+    return SECSuccess;
+}
+
 SECStatus
 tls13_DecodeESNIKeys(const sslSocket *ss, SECItem *data, sslESNIKeys **keysp)
 {
@@ -42,9 +73,17 @@ tls13_DecodeESNIKeys(const sslSocket *ss, SECItem *data, sslESNIKeys **keysp)
     sslReadBuffer tmp;
     PRUint64 tmpn;
     sslESNIKeys *keys;
-    PRUint8 sha256[32];
+    PRUint8 checksum[4];
     sslReader rdr = SSL_READER(data->data, data->len);
 
+    rv = sslRead_ReadNumber(&rdr, 2, &tmpn);
+    if (rv != SECSuccess) {
+        return SECFailure;
+    }
+    if (tmpn != TLS13_ESNI_VERSION) {
+        PORT_SetError(SSL_ERROR_UNSUPPORTED_VERSION);
+        return SECFailure;
+    }
     keys = PORT_ZNew(sslESNIKeys);
     if (!keys) {
         return SECFailure;
@@ -57,22 +96,18 @@ tls13_DecodeESNIKeys(const sslSocket *ss, SECItem *data, sslESNIKeys **keysp)
         goto loser;
     }
 
-    /* Checksum. */
+    rv = tls13_ComputeESNIKeysChecksum(data->data, data->len, checksum);
+    if (rv != SECSuccess) {
+        goto loser;
+    }
+
+    /* Read and check checksum. */
     rv = sslRead_Read(&rdr, 4, &tmp);
     if (rv != SECSuccess) {
         goto loser;
     }
 
-    /* Now check the checksum. */
-    rv = PK11_HashBuf(ssl3_HashTypeToOID(ssl_hash_sha256),
-                      sha256,
-                      SSL_READER_CURRENT(&rdr),
-                      SSL_READER_REMAINING(&rdr));
-    if (rv != SECSuccess) {
-        PORT_Assert(PR_FALSE);
-        goto loser;
-    }
-    if (0 != NSS_SecureMemcmp(tmp.buf, sha256, 4)) {
+    if (0 != NSS_SecureMemcmp(tmp.buf, checksum, 4)) {
         goto loser;
     }
 
@@ -160,9 +195,13 @@ SSLExp_EncodeESNIKeys(PRUint16 *cipherSuites, unsigned int cipherSuiteCount,
                       PRUint8 *out, unsigned int *outlen, unsigned int maxlen)
 {
     unsigned int savedOffset1;
-    PRUint8 sha256[32];
     SECStatus rv;
     sslBuffer b = SSL_BUFFER_EMPTY;
+
+    rv = sslBuffer_AppendNumber(&b, TLS13_ESNI_VERSION, 2);
+    if (rv != SECSuccess) {
+        goto loser;
+    }
 
     rv = sslBuffer_Skip(&b, 4, &savedOffset1);
     if (rv != SECSuccess) {
@@ -218,15 +257,13 @@ SSLExp_EncodeESNIKeys(PRUint16 *cipherSuites, unsigned int cipherSuiteCount,
         goto loser;
     }
 
-    /* Now compute the checksum. */
-    rv = PK11_HashBuf(ssl3_HashTypeToOID(ssl_hash_sha256), sha256,
-                      SSL_BUFFER_BASE(&b) + 4,
-                      SSL_BUFFER_LEN(&b) - 4);
+    rv = tls13_ComputeESNIKeysChecksum(SSL_BUFFER_BASE(&b),
+                                       SSL_BUFFER_LEN(&b),
+                                       SSL_BUFFER_BASE(&b) + 2);
     if (rv != SECSuccess) {
         PORT_Assert(PR_FALSE);
         goto loser;
     }
-    PORT_Memcpy(SSL_BUFFER_BASE(&b), sha256, 4);
 
     if (SSL_BUFFER_LEN(&b) > maxlen) {
         PORT_SetError(SEC_ERROR_INVALID_ARGS);
