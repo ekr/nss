@@ -362,22 +362,11 @@ ssl_DupSocket(sslSocket *os)
         ss->resumptionTokenCallback = os->resumptionTokenCallback;
         ss->resumptionTokenContext = os->resumptionTokenContext;
 
-        if (os->esniPrivateKey) {
-            ss->esniPrivateKey = ssl_CopyEphemeralKeyPair(ss->esniPrivateKey);
-            if (!ss->esniPrivateKey) {
-                goto loser;
-            }
-        }
-        if (os->esniKeysRecord.len) {
-            rv = SECITEM_CopyItem(NULL, &ss->esniKeysRecord, &os->esniKeysRecord);
-            if (rv != SECSuccess) {
-                goto loser;
-            }
-        }
-        if (os->peerEsniKeys) {
-            // TODO(ekr@rtfm.com): Implement.
+        if (os->esniKeys) {
+            /* TODO(ekr@rtfm.com): implement. */
             abort();
         }
+
         /* Create security data */
         rv = ssl_CopySecurityInfo(ss, os);
         if (rv != SECSuccess) {
@@ -464,11 +453,7 @@ ssl_DestroySocketContents(sslSocket *ss)
     ssl_ClearPRCList(&ss->ssl3.hs.dtlsSentHandshake, NULL);
     ssl_ClearPRCList(&ss->ssl3.hs.dtlsRcvdHandshake, NULL);
 
-    if (ss->esniPrivateKey) {
-        ssl_FreeEphemeralKeyPair(ss->esniPrivateKey);
-    }
-    SECITEM_FreeItem(&ss->esniKeysRecord, PR_FALSE);
-    tls13_DestroyESNIKeys(ss->peerEsniKeys);
+    tls13_DestroyESNIKeys(ss->esniKeys);
 }
 
 /*
@@ -3964,8 +3949,7 @@ ssl_NewSocket(PRBool makeLocks, SSLProtocolVariant protocolVariant)
     PR_INIT_CLIST(&ss->ssl3.hs.dtlsRcvdHandshake);
     dtls_InitTimers(ss);
 
-    ss->esniPrivateKey = NULL;
-    ss->peerEsniKeys = NULL;
+    ss->esniKeys = NULL;
 
     if (makeLocks) {
         rv = ssl_MakeLocks(ss);

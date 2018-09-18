@@ -11,6 +11,7 @@
 
 struct sslESNIKeysStr {
     SECItem data; /* Stored for later. */
+    sslEphemeralKeyPair *privKey;
     const char *dummySni;
     PRCList keyShares; /* List of TLS13KeyShareEntry */
     SECItem suites;

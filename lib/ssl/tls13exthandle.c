@@ -1184,8 +1184,8 @@ tls13_ClientSendEsniXtn(const sslSocket *ss, TLSExtensionData *xtnData,
 
     /* Padding. The spec is self-contradictory on how much padding to use, but
      * we opt for the definition in the PDU, which ignores the nonce length. */
-    if (ss->peerEsniKeys->paddedLength > sniLen) {
-    unsigned int paddingRequired = ss->peerEsniKeys->paddedLength - sniLen;
+    if (ss->esniKeys->paddedLength > sniLen) {
+    unsigned int paddingRequired = ss->esniKeys->paddedLength - sniLen;
         while (paddingRequired--) {
             rv = sslBuffer_AppendNumber(&sni, 0, 1);
             if (rv != SECSuccess) {
@@ -1222,8 +1222,8 @@ tls13_ClientSendEsniXtn(const sslSocket *ss, TLSExtensionData *xtnData,
 
     rv = PK11_HashBuf(ssl3_HashTypeToOID(suiteDef->prf_hash),
                       hash,
-                      ss->peerEsniKeys->data.data,
-                      ss->peerEsniKeys->data.len);
+                      ss->esniKeys->data.data,
+                      ss->esniKeys->data.len);
     if (rv != SECSuccess) {
         PORT_Assert(PR_FALSE);
         return SECFailure;
@@ -1318,7 +1318,7 @@ tls13_ServerHandleEsniXtn(const sslSocket *ss, TLSExtensionData *xtnData,
         return SECSuccess;
     }
 
-    if (!ss->esniPrivateKey) {
+    if (!ss->esniKeys) {
         /* Apparently we used to be configured for ESNI, but
          * no longer. This violates the spec, or the client is
          * broken. */
@@ -1350,7 +1350,7 @@ tls13_ServerHandleEsniXtn(const sslSocket *ss, TLSExtensionData *xtnData,
         goto loser;
     }
     keyShareBufLen = SSL_READER_CURRENT(&rdr) - keyShareBuf;
-    if (!entry || entry->group->name != ss->esniPrivateKey->group->name) {
+    if (!entry || entry->group->name != ss->esniKeys->privKey->group->name) {
         goto loser;
     }
 
@@ -1363,8 +1363,7 @@ tls13_ServerHandleEsniXtn(const sslSocket *ss, TLSExtensionData *xtnData,
     /* Check that the hash matches. */
     rv = PK11_HashBuf(ssl3_HashTypeToOID(suiteDef->prf_hash),
                       hash,
-                      ss->esniKeysRecord.data,
-                      ss->esniKeysRecord.len);
+                      ss->esniKeys->data.data, ss->esniKeys->data.len);
     if (rv != SECSuccess) {
         goto loser;
     }
@@ -1378,7 +1377,8 @@ tls13_ServerHandleEsniXtn(const sslSocket *ss, TLSExtensionData *xtnData,
         goto loser;
     }
 
-    rv = tls13_ComputeESNIKeys((sslSocket *)ss, entry, ss->esniPrivateKey->keys,
+    rv = tls13_ComputeESNIKeys((sslSocket *)ss, entry,
+                               ss->esniKeys->privKey->keys,
                                suiteDef,
                                hash, keyShareBuf, keyShareBufLen,
                                ((sslSocket *)ss)->ssl3.hs.client_random,

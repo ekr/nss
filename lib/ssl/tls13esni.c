@@ -46,6 +46,9 @@ tls13_DecodeESNIKeys(const sslSocket *ss, SECItem *data, sslESNIKeys **keysp)
     sslReader rdr = SSL_READER(data->data, data->len);
 
     keys = PORT_ZNew(sslESNIKeys);
+    if (!keys) {
+        return SECFailure;
+    }
     PR_INIT_CLIST(&keys->keyShares);
 
     /* Make a copy. */
@@ -250,6 +253,7 @@ SSLExp_SetESNIKeyPair(PRFileDesc *fd,
 {
     sslSocket *ss;
     SECStatus rv;
+    sslESNIKeys *keys = NULL;
 
     ss = ssl_FindSocket(fd);
     if (!ss) {
@@ -277,22 +281,35 @@ SSLExp_SetESNIKeyPair(PRFileDesc *fd,
         }
     }
 
-    /* This call checks that the group is non-null. */
-    ss->esniPrivateKey = ssl_NewEphemeralKeyPair(
-        ssl_LookupNamedGroup(group),
-        privKey, pubKey);
-    if (!ss->esniPrivateKey) {
+    keys = PORT_ZNew(sslESNIKeys);
+    if (!keys) {
         return SECFailure;
+    }
+    PR_INIT_CLIST(&keys->keyShares);
+
+    /* This call checks that the group is non-null. */
+    keys->privKey = ssl_NewEphemeralKeyPair(
+        ssl_LookupNamedGroup(group), privKey, pubKey);
+    if (!keys->privKey) {
+        goto loser;
     }
 
     /* Copy the key record. */
-    rv = SECITEM_MakeItem(NULL, &ss->esniKeysRecord,
+    rv = SECITEM_MakeItem(NULL, &keys->data,
                           (const unsigned char *)record, recordLen);
     if (rv != SECSuccess) {
-        return SECFailure;
+        goto loser;
     }
 
+    ss->esniKeys = keys;
     return SECSuccess;
+
+loser:
+    if (keys) {
+       tls13_DestroyESNIKeys(keys);
+    }
+
+    return SECFailure;
 }
 
 
@@ -325,7 +342,7 @@ SSLExp_EnableESNI(PRFileDesc *fd,
         return SECFailure;
     }
 
-    ss->peerEsniKeys = keys;
+    ss->esniKeys = keys;
 
     return SECSuccess;
 }
@@ -432,7 +449,7 @@ tls13_ClientSetupESNI(sslSocket *ss)
     TLS13KeyShareEntry *share;
 
     /* TODO(ekr@rtfm.com): Check for expiry. */
-    if (!ss->peerEsniKeys) {
+    if (!ss->esniKeys) {
         return SECSuccess;
     }
 
@@ -443,8 +460,8 @@ tls13_ClientSetupESNI(sslSocket *ss)
 
     /* Pick the group. */
     for (i = 0; i < SSL_NAMED_GROUP_COUNT; ++i) {
-        for (cur = PR_NEXT_LINK(&ss->peerEsniKeys->keyShares);
-             cur != &ss->peerEsniKeys->keyShares;
+        for (cur = PR_NEXT_LINK(&ss->esniKeys->keyShares);
+             cur != &ss->esniKeys->keyShares;
              cur = PR_NEXT_LINK(cur)) {
             if (!ss->namedGroupPreferences[i]) {
                 continue;
@@ -461,7 +478,7 @@ found:
         return SECSuccess;
     }
 
-    rv = ssl3_NegotiateCipherSuiteInner(ss, &ss->peerEsniKeys->suites,
+    rv = ssl3_NegotiateCipherSuiteInner(ss, &ss->esniKeys->suites,
                                         SSL_LIBRARY_VERSION_TLS_1_3, &suite);
     if (rv != SECSuccess) {
         return SECSuccess;

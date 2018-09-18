@@ -80,7 +80,7 @@ ssl3_ClientSendServerNameXtn(const sslSocket *ss, TLSExtensionData *xtnData,
     /* We only make an ESNI private key if we are going to
      * send ESNI. */
     if (ss->xtnData.esniPrivateKey != NULL) {
-        url = ss->peerEsniKeys->dummySni;
+        url = ss->esniKeys->dummySni;
     }
 
     if (!ssl_ShouldSendSNIExtension(ss, url)) {

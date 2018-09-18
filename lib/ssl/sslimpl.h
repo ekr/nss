@@ -1071,10 +1071,9 @@ struct sslSocketStr {
     /* Whether we are doing stream or datagram mode */
     SSLProtocolVariant protocolVariant;
 
-    /* ESNI Key */
-    sslEphemeralKeyPair *esniPrivateKey;
-    SECItem esniKeysRecord;
-    sslESNIKeys *peerEsniKeys;
+    /* The information from the ESNI keys record
+     * (also the private key for the server). */
+    sslESNIKeys *esniKeys;
 };
 
 struct sslSelfEncryptKeysStr {
