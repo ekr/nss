@@ -1429,10 +1429,11 @@ run()
     }
 
     if (encryptedSNIKeys) {
-        SECItem esniKeysBin;
+        SECItem esniKeysBin = { siBuffer, NULL, 0 };
 
         if (!NSSBase64_DecodeBuffer(NULL, &esniKeysBin, encryptedSNIKeys,
                                     strlen(encryptedSNIKeys))) {
+            SECU_PrintError(progName, "ESNIKeys record is invalid base64");
             error = 1;
             goto done;
         }
