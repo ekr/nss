@@ -65,8 +65,8 @@ tls13_ComputeESNIKeysChecksum(const PRUint8 *buf, unsigned int len,
     return SECSuccess;
 }
 
-SECStatus
-tls13_DecodeESNIKeys(const sslSocket *ss, SECItem *data, sslEsniKeys **keysp)
+static SECStatus
+tls13_DecodeESNIKeys(SECItem *data, sslEsniKeys **keysp)
 {
     SECStatus rv;
     sslReadBuffer tmp;
@@ -118,10 +118,9 @@ tls13_DecodeESNIKeys(const sslSocket *ss, SECItem *data, sslEsniKeys **keysp)
 
     sslReader rdr2 = SSL_READER(tmp.buf, tmp.len);
     while (SSL_READER_REMAINING(&rdr2)) {
-        /* TODO(ekr@rtfm.com): This generates an alert if it fails. */
         TLS13KeyShareEntry *ks = NULL;
 
-        rv = tls13_DecodeKeyShareEntry(ss, &rdr2, &ks);
+        rv = tls13_DecodeKeyShareEntry(&rdr2, &ks);
         if (rv != SECSuccess) {
             goto loser;
         }
@@ -193,7 +192,7 @@ SSLExp_EncodeESNIKeys(PRUint16 *cipherSuites, unsigned int cipherSuiteCount,
                       PRUint16 pad, PRUint64 notBefore, PRUint64 notAfter,
                       PRUint8 *out, unsigned int *outlen, unsigned int maxlen)
 {
-    unsigned int savedOffset1;
+    unsigned int savedOffset;
     SECStatus rv;
     sslBuffer b = SSL_BUFFER_EMPTY;
 
@@ -202,7 +201,7 @@ SSLExp_EncodeESNIKeys(PRUint16 *cipherSuites, unsigned int cipherSuiteCount,
         goto loser;
     }
 
-    rv = sslBuffer_Skip(&b, 4, &savedOffset1);
+    rv = sslBuffer_Skip(&b, 4, &savedOffset);
     if (rv != SECSuccess) {
         goto loser;
     }
@@ -382,7 +381,7 @@ SSLExp_EnableESNI(PRFileDesc *fd,
         return SECFailure;
     }
 
-    rv = tls13_DecodeESNIKeys(ss, &data, &keys);
+    rv = tls13_DecodeESNIKeys(&data, &keys);
     if (rv != SECSuccess) {
         return SECFailure;
     }

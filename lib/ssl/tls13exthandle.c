@@ -169,8 +169,7 @@ tls13_ClientSendKeyShareXtn(const sslSocket *ss, TLSExtensionData *xtnData,
 }
 
 SECStatus
-tls13_DecodeKeyShareEntry(const sslSocket *ss,
-                          sslReader *rdr, TLS13KeyShareEntry **ksp)
+tls13_DecodeKeyShareEntry(sslReader *rdr, TLS13KeyShareEntry **ksp)
 {
     SECStatus rv;
     PRUint64 group;
@@ -239,7 +238,7 @@ tls13_ClientHandleKeyShareXtn(const sslSocket *ss, TLSExtensionData *xtnData,
                 SSL_GETPID(), ss->fd));
 
     sslReader rdr = SSL_READER(data->data, data->len);
-    rv = tls13_DecodeKeyShareEntry(ss, &rdr, &ks);
+    rv = tls13_DecodeKeyShareEntry(&rdr, &ks);
     if (rv != SECSuccess) {
         PORT_SetError(SSL_ERROR_RX_MALFORMED_KEY_SHARE);
         return SECFailure;
@@ -347,7 +346,7 @@ tls13_ServerHandleKeyShareXtn(const sslSocket *ss, TLSExtensionData *xtnData,
     sslReader rdr = SSL_READER(data->data, data->len);
     while (SSL_READER_REMAINING(&rdr)) {
         TLS13KeyShareEntry *ks = NULL;
-        rv = tls13_DecodeKeyShareEntry(ss, &rdr, &ks);
+        rv = tls13_DecodeKeyShareEntry(&rdr, &ks);
         if (rv != SECSuccess) {
             PORT_SetError(SSL_ERROR_RX_MALFORMED_KEY_SHARE);
             goto loser;
@@ -1364,7 +1363,7 @@ tls13_ServerHandleEsniXtn(const sslSocket *ss, TLSExtensionData *xtnData,
     /* Note where the KeyShare starts. */
     keyShareBuf = SSL_READER_CURRENT(&rdr);
     /* Everything after here needs to go to loser on fail. */
-    rv = tls13_DecodeKeyShareEntry(ss, &rdr, &entry);
+    rv = tls13_DecodeKeyShareEntry(&rdr, &entry);
     if (rv != SECSuccess) {
         goto loser;
     }

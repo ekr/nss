@@ -534,6 +534,7 @@ tls13_HandleKeyShare(sslSocket *ss,
     SECKEYPublicKey *peerKey;
     CK_MECHANISM_TYPE mechanism;
     PRErrorCode errorCode;
+    PK11SymKey *key;
     SECStatus rv;
 
     PORT_InitCheapArena(&arena, DER_DEFAULT_CHUNKSIZE);
@@ -568,13 +569,14 @@ tls13_HandleKeyShare(sslSocket *ss,
         goto loser;
     }
 
-    *out = PK11_PubDeriveWithKDF(
+    key = PK11_PubDeriveWithKDF(
         keyPair->privKey, peerKey, PR_FALSE, NULL, NULL, mechanism,
         tls13_GetHkdfMechanismForHash(hash), CKA_DERIVE, 0, CKD_NULL, NULL, NULL);
-    if (!*out) {
+    if (!key) {
         ssl_MapLowLevelError(SSL_ERROR_KEY_EXCHANGE_FAILURE);
         goto loser;
     }
+    *out = key;
     PORT_DestroyCheapArena(&arena);
     return SECSuccess;
 
