@@ -33,7 +33,7 @@ const char kHkdfPurposeEsniIv[] = "esni iv";
 
 
 void
-tls13_DestroyESNIKeys(sslESNIKeys *keys) {
+tls13_DestroyESNIKeys(sslEsniKeys *keys) {
     // TODO(ekr@rtfm.com): Implement.
 }
 
@@ -66,12 +66,12 @@ tls13_ComputeESNIKeysChecksum(const PRUint8 *buf, unsigned int len,
 }
 
 SECStatus
-tls13_DecodeESNIKeys(const sslSocket *ss, SECItem *data, sslESNIKeys **keysp)
+tls13_DecodeESNIKeys(const sslSocket *ss, SECItem *data, sslEsniKeys **keysp)
 {
     SECStatus rv;
     sslReadBuffer tmp;
     PRUint64 tmpn;
-    sslESNIKeys *keys;
+    sslEsniKeys *keys;
     PRUint8 checksum[4];
     sslReader rdr = SSL_READER(data->data, data->len);
 
@@ -83,7 +83,7 @@ tls13_DecodeESNIKeys(const sslSocket *ss, SECItem *data, sslESNIKeys **keysp)
         PORT_SetError(SSL_ERROR_UNSUPPORTED_VERSION);
         return SECFailure;
     }
-    keys = PORT_ZNew(sslESNIKeys);
+    keys = PORT_ZNew(sslEsniKeys);
     if (!keys) {
         return SECFailure;
     }
@@ -289,7 +289,7 @@ SSLExp_SetESNIKeyPair(PRFileDesc *fd,
 {
     sslSocket *ss;
     SECStatus rv;
-    sslESNIKeys *keys = NULL;
+    sslEsniKeys *keys = NULL;
     /* Way too big but we don't have a separate 1.3 list. */
     PRUint8 csBuf[ssl_V3_SUITES_IMPLEMENTED * 2];
     sslBuffer cs = SSL_BUFFER(csBuf);
@@ -325,7 +325,7 @@ SSLExp_SetESNIKeyPair(PRFileDesc *fd,
         }
     }
 
-    keys = PORT_ZNew(sslESNIKeys);
+    keys = PORT_ZNew(sslEsniKeys);
     if (!keys) {
         return SECFailure;
     }
@@ -371,7 +371,7 @@ SSLExp_EnableESNI(PRFileDesc *fd,
                   const char *dummySNI)
 {
     sslSocket *ss;
-    sslESNIKeys *keys = NULL;
+    sslEsniKeys *keys = NULL;
     SECItem data = { siBuffer, esniKeys, esniKeysLen };
     SECStatus rv;
 

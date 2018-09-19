@@ -36,7 +36,7 @@
 
 typedef struct sslSocketStr sslSocket;
 typedef struct sslNamedGroupDefStr sslNamedGroupDef;
-typedef struct sslESNIKeysStr sslESNIKeys;
+typedef struct sslEsniKeysStr sslEsniKeys;
 typedef struct sslEphemeralKeyPairStr sslEphemeralKeyPair;
 typedef struct TLS13KeyShareEntryStr TLS13KeyShareEntry;
 
@@ -1073,7 +1073,7 @@ struct sslSocketStr {
 
     /* The information from the ESNI keys record
      * (also the private key for the server). */
-    sslESNIKeys *esniKeys;
+    sslEsniKeys *esniKeys;
 };
 
 struct sslSelfEncryptKeysStr {

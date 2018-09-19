@@ -9,7 +9,7 @@
 #ifndef __tls13esni_h_
 #define __tls13esni_h_
 
-struct sslESNIKeysStr {
+struct sslEsniKeysStr {
     SECItem data; /* Stored for later. */
     sslEphemeralKeyPair *privKey;
     const char *dummySni;
@@ -63,7 +63,7 @@ SECStatus SSLExp_EncodeESNIKeys(PRUint16 *cipherSuites, unsigned int cipherSuite
                                 PRUint16 pad, PRUint64 notBefore, PRUint64 notAfter,
                                 PRUint8 *out, unsigned int *outlen, unsigned int maxlen);
 
-void tls13_DestroyESNIKeys(sslESNIKeys *keys);
+void tls13_DestroyESNIKeys(sslEsniKeys *keys);
 SECStatus tls13_ClientSetupESNI(sslSocket *ss);
 SECStatus tls13_ComputeESNIKeys(const sslSocket *ss,
                                 TLS13KeyShareEntry *entry,
