@@ -1102,20 +1102,23 @@ tls13_ServerSendHrrCookieXtn(const sslSocket *ss, TLSExtensionData *xtnData,
     return SECSuccess;
 }
 
-
 /*
- *    struct {
- *        ServerNameList sni;
- *        uint8 nonce[16];
- *        opaque zeros[ESNIKeys.padded_length - length(sni)];
- *    } PaddedServerNameList;
+ * struct {
+ *     CipherSuite suite;
+ *     KeyShareEntry key_share;
+ *     opaque record_digest<0..2^16-1>;
+ *     opaque encrypted_sni<0..2^16-1>;
+ * } ClientEncryptedSNI;
  *
- *    struct {
- *        CipherSuite suite;
- *        KeyShareEntry key_share;
- *        opaque record_digest<0..2^16-1>;
- *        opaque encrypted_sni<0..2^16-1>;
- *    } EncryptedSNI;
+ * struct {
+ *     ServerNameList sni;
+ *     opaque zeros[ESNIKeys.padded_length - length(sni)];
+ * } PaddedServerNameList;
+ *
+ * struct {
+ *     uint8 nonce[16];
+ *     PaddedServerNameList realSNI;
+ * } ClientESNIInner;
  */
 static SECStatus
 tls13_FormatEsniAADInput(sslBuffer *aadInput,
@@ -1163,13 +1166,6 @@ tls13_ClientSendEsniXtn(const sslSocket *ss, TLSExtensionData *xtnData,
         return SECSuccess;
     }
 
-    /* sni */
-    rv = ssl3_ClientFormatServerNameXtn(ss, ss->url, xtnData, &sni);
-    if (rv != SECSuccess) {
-        return SECFailure;
-    }
-    sniLen = SSL_BUFFER_LEN(&sni);
-
     /* nonce */
     rv = PK11_GenerateRandom(
         (unsigned char *)xtnData->esniNonce, sizeof(xtnData->esniNonce));
@@ -1181,6 +1177,13 @@ tls13_ClientSendEsniXtn(const sslSocket *ss, TLSExtensionData *xtnData,
         return SECFailure;
     }
 
+    /* sni */
+    rv = ssl3_ClientFormatServerNameXtn(ss, ss->url, xtnData, &sni);
+    if (rv != SECSuccess) {
+        return SECFailure;
+    }
+
+    sniLen = SSL_BUFFER_LEN(&sni);
     /* Padding. The spec is self-contradictory on how much padding to use, but
      * we opt for the definition in the PDU, which ignores the nonce length. */
     if (ss->esniKeys->paddedLength > sniLen) {
@@ -1446,17 +1449,20 @@ tls13_ServerHandleEsniXtn(const sslSocket *ss, TLSExtensionData *xtnData,
 
     /* Read out the interior extension. */
     sslReader sniRdr = SSL_READER(sniBuf, sniLen);
-    rv = sslRead_ReadVariable(&sniRdr, 2, &buf);
-    if (rv != SECSuccess) {
-        goto loser;
-    }
-    SECItem sniItem = { siBuffer, sniBuf, 2 + buf.len };
 
     rv = sslRead_Read(&sniRdr, sizeof(xtnData->esniNonce), &buf);
     if (rv != SECSuccess) {
         goto loser;
     }
     PORT_Memcpy(xtnData->esniNonce, buf.buf, sizeof(xtnData->esniNonce));
+
+    /* We need to capture the whole block with the length. */
+    SECItem sniItem = { siBuffer, (unsigned char *)SSL_READER_CURRENT(&sniRdr), 0 };
+    rv = sslRead_ReadVariable(&sniRdr, 2, &buf);
+    if (rv != SECSuccess) {
+        goto loser;
+    }
+    sniItem.len = buf.len + 2;
 
     /* Check the padding. */
     PRUint64 tmp;
