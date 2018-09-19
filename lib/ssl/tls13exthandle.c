@@ -1183,11 +1183,11 @@ tls13_ClientSendEsniXtn(const sslSocket *ss, TLSExtensionData *xtnData,
         return SECFailure;
     }
 
-    sniLen = SSL_BUFFER_LEN(&sni);
+    sniLen = SSL_BUFFER_LEN(&sni) - sizeof(xtnData->esniNonce);
     /* Padding. The spec is self-contradictory on how much padding to use, but
      * we opt for the definition in the PDU, which ignores the nonce length. */
     if (ss->esniKeys->paddedLength > sniLen) {
-    unsigned int paddingRequired = ss->esniKeys->paddedLength - sniLen;
+        unsigned int paddingRequired = ss->esniKeys->paddedLength - sniLen;
         while (paddingRequired--) {
             rv = sslBuffer_AppendNumber(&sni, 0, 1);
             if (rv != SECSuccess) {
@@ -1465,6 +1465,7 @@ tls13_ServerHandleEsniXtn(const sslSocket *ss, TLSExtensionData *xtnData,
     sniItem.len = buf.len + 2;
 
     /* Check the padding. */
+    /* TODO(ekr@rtfm.com): check that the padding is the right length. */
     PRUint64 tmp;
     while (SSL_READER_REMAINING(&sniRdr)) {
         rv = sslRead_ReadNumber(&sniRdr, 1, &tmp);
