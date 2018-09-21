@@ -26,7 +26,7 @@ static void SetupESNI(const std::shared_ptr<TlsAgent>& client,
   SECKEYPublicKey *pub = nullptr;
   SECKEYPrivateKey *priv = SECKEY_CreateECPrivateKey(&ecParams,
                                                      &pub, nullptr);
-  char encoded[1024];
+  PRUint8 encoded[1024];
   unsigned int encodedLen;
   uint16_t cipherSuites[] = { TLS_AES_128_GCM_SHA256 };
 

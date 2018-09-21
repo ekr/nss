@@ -466,7 +466,7 @@ typedef SECStatus(PR_CALLBACK *SSLResumptionTokenCallback)(
          SECKEYPublicKey * _pubKey,                           \
          const PRUint16 *_cipherSuites,                       \
          unsigned int _cipherSuitesCount,                               \
-         const char *_record, unsigned int _recordLen),                 \
+         const PRUint8 *_record, unsigned int _recordLen),             \
                          (fd, group, privKey, pubKey, cipherSuites, cipherSuiteCount, record, recordLen))
 
 #define SSL_EnableESNI(fd, esniKeys, esniKeysLen, dummySNI) \
