@@ -472,7 +472,7 @@ typedef SECStatus(PR_CALLBACK *SSLResumptionTokenCallback)(
 #define SSL_EnableESNI(fd, esniKeys, esniKeysLen, dummySNI) \
     SSL_EXPERIMENTAL_API("SSL_EnableESNI", \
         (PRFileDesc *_fd, \
-         PRUint8 *_esniKeys,   \
+         const PRUint8 *_esniKeys,   \
          unsigned int _esniKeysLen, \
          const char *_dummySNI), (fd, esniKeys, esniKeysLen, dummySNI))
 

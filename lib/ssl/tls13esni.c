@@ -390,6 +390,14 @@ SSLExp_SetESNIKeyPair(PRFileDesc *fd,
     PR_INIT_CLIST(&keys->keyShares);
 
     /* This call checks that the group is non-null. */
+    privKey = SECKEY_CopyPrivateKey(privKey);
+    if (!privKey) {
+        goto loser;
+    }
+    pubKey = SECKEY_CopyPublicKey(pubKey);
+    if (!pubKey) {
+        goto loser;
+    }
     keys->privKey = ssl_NewEphemeralKeyPair(
         ssl_LookupNamedGroup(group), privKey, pubKey);
     if (!keys->privKey) {
@@ -424,7 +432,7 @@ loser:
 
 SECStatus
 SSLExp_EnableESNI(PRFileDesc *fd,
-                  PRUint8 *esniKeys,
+                  const PRUint8 *esniKeys,
                   unsigned int esniKeysLen,
                   const char *dummySNI)
 {

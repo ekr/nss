@@ -17,9 +17,27 @@ namespace nss_test {
 
 static const char *kDummySni("dummy.invalid");
 
-static void SetupESNI(const std::shared_ptr<TlsAgent>& client,
-                      const std::shared_ptr<TlsAgent>& server) {
-  auto groupDef = ssl_LookupNamedGroup(ssl_grp_ec_curve25519);
+
+// Tests needed
+// Client
+// - expired
+// - unknown CS
+// - unknown group
+
+// Server
+// - hash mismatch
+// - invalid encoding
+// - remove extension
+
+std::vector<uint16_t> kDefaultSuites = { TLS_AES_128_GCM_SHA256 };
+
+static void GenerateESNIKey(time_t windowStart,
+                            SSLNamedGroup group,
+                            std::vector<uint16_t>& cipherSuites,
+                            DataBuffer* record,
+                            ScopedSECKEYPublicKey* pubKey = nullptr,
+                            ScopedSECKEYPrivateKey* privKey = nullptr) {
+  auto groupDef = ssl_LookupNamedGroup(group);
   ASSERT_NE(nullptr, groupDef);
 
   SECKEYECParams ecParams = { siBuffer, NULL, 0 };
@@ -30,26 +48,42 @@ static void SetupESNI(const std::shared_ptr<TlsAgent>& client,
                                                      &pub, nullptr);
   PRUint8 encoded[1024];
   unsigned int encodedLen;
-  uint16_t cipherSuites[] = { TLS_AES_128_GCM_SHA256 };
-  auto now = time(nullptr);
+
   SECStatus rv = SSL_EncodeESNIKeys(
-      cipherSuites, PR_ARRAY_SIZE(cipherSuites),
+      &cipherSuites[0], cipherSuites.size(),
       ssl_grp_ec_curve25519,
-      pub, 100, now, now + 10,
+      pub, 100, windowStart, windowStart + 10,
       encoded, &encodedLen, sizeof(encoded));
   ASSERT_EQ(SECSuccess, rv);
   ASSERT_GT(encodedLen, 0U);
-  std::cerr << "Encoded length " << encodedLen << std::endl;
 
-  rv = SSL_SetESNIKeyPair(server->ssl_fd(),
-                          ssl_grp_ec_curve25519,
-                          priv, pub,
-                          cipherSuites, PR_ARRAY_SIZE(cipherSuites),
-                          encoded, encodedLen);
+  if (pubKey) {
+    pubKey->reset(pub);
+  }
+  if (privKey) {
+    privKey->reset(priv);
+  }
+  record->Truncate(0);
+  record->Write(0, encoded, encodedLen);
+}
+
+static void SetupESNI(const std::shared_ptr<TlsAgent>& client,
+                      const std::shared_ptr<TlsAgent>& server) {
+  ScopedSECKEYPublicKey pub;
+  ScopedSECKEYPrivateKey priv;
+  DataBuffer record;
+
+  GenerateESNIKey(time(nullptr), ssl_grp_ec_curve25519, kDefaultSuites,
+                  &record, &pub, &priv);
+  SECStatus rv = SSL_SetESNIKeyPair(server->ssl_fd(),
+                                    ssl_grp_ec_curve25519,
+                                    priv.get(), pub.get(),
+                                         &kDefaultSuites[0], kDefaultSuites.size(),
+                                    record.data(), record.len());
   ASSERT_EQ(SECSuccess, rv);
 
   rv = SSL_EnableESNI(client->ssl_fd(),
-                      encoded, encodedLen, kDummySni);
+                      record.data(), record.len(), kDummySni);
   ASSERT_EQ(SECSuccess, rv);
 }
 
@@ -67,9 +101,42 @@ static void CheckSNIExtension(const DataBuffer& data) {
   ASSERT_EQ(expected, name);
 }
 
-TEST_P(TlsAgentTestClient13, EncodeDecodeESNIKeys) {
+
+static void ClientInstallESNI(std::shared_ptr<TlsAgent>& agent,
+                              const DataBuffer& record, PRErrorCode err = 0 ) {
+  SECStatus rv = SSL_EnableESNI(agent->ssl_fd(),
+                                record.data(), record.len(), kDummySni);
+  if (err == 0) {
+    ASSERT_EQ(SECSuccess, rv);
+  } else {
+    ASSERT_EQ(SECFailure, rv);
+    ASSERT_EQ(err, PORT_GetError());
+  }
+}
+
+TEST_P(TlsAgentTestClient13, ESNIInstall) {
   EnsureInit();
-  SetupESNI(agent_, agent_);
+  DataBuffer record;
+  GenerateESNIKey(time_t(0), ssl_grp_ec_curve25519, kDefaultSuites, &record);
+  ClientInstallESNI(agent_, record);
+}
+
+TEST_P(TlsAgentTestClient13, ESNIInvalidHash) {
+
+  EnsureInit();
+  DataBuffer record;
+  GenerateESNIKey(time_t(0), ssl_grp_ec_curve25519, kDefaultSuites, &record);
+  record.data()[2]++;
+  ClientInstallESNI(agent_, record, SSL_ERROR_RX_MALFORMED_ESNI_KEYS);
+}
+
+TEST_P(TlsAgentTestClient13, ESNIInvalidVersion) {
+
+  EnsureInit();
+  DataBuffer record;
+  GenerateESNIKey(time_t(0), ssl_grp_ec_curve25519, kDefaultSuites, &record);
+  record.Write(0, 0xffff, 2);
+  ClientInstallESNI(agent_, record, SSL_ERROR_UNSUPPORTED_VERSION);
 }
 
 TEST_P(TlsConnectTls13, ConnectESNI) {

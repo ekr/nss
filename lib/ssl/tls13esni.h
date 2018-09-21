@@ -45,7 +45,7 @@ SSLExp_SetESNIKeyPair(PRFileDesc *fd,
  * ensikeys/esniKeysLen -- the ESNI key structure (not base64)
  * dummyESNI -- the dummy ESNI to use (if any)
  */
-SECStatus SSLExp_EnableESNI(PRFileDesc *fd, PRUint8 *esniKeys,
+SECStatus SSLExp_EnableESNI(PRFileDesc *fd, const PRUint8 *esniKeys,
                             unsigned int esniKeysLen, const char *dummySNI);
 /*
  * Generate an encoded ESNIKeys structure (presumably server side).
