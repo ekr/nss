@@ -457,7 +457,8 @@ tls13_ComputeESNIKeys(const sslSocket *ss,
 
     rv = PK11_HashBuf(ssl3_HashTypeToOID(suite->prf_hash),
                       hash,
-                      esniContentsBuf, SSL_BUFFER_LEN(&esniContents));;
+                      SSL_BUFFER_BASE(&esniContents),
+                      SSL_BUFFER_LEN(&esniContents));;
     if (rv != SECSuccess) {
         goto loser;
     }
@@ -497,6 +498,7 @@ tls13_ClientSetupESNI(sslSocket *ss)
     PRCList *cur;
     SECStatus rv;
     TLS13KeyShareEntry *share;
+    const sslNamedGroupDef *group = NULL;
 
     /* TODO(ekr@rtfm.com): Check for expiry. */
     if (!ss->esniKeys) {
@@ -518,12 +520,13 @@ tls13_ClientSetupESNI(sslSocket *ss)
             }
             share = (TLS13KeyShareEntry *)cur;
             if (share->group->name == ss->namedGroupPreferences[i]->name) {
-                goto found;
+                group = ss->namedGroupPreferences[i];
+                break;
             }
         }
     }
-found:
-    if (i == SSL_NAMED_GROUP_COUNT) {
+
+    if (!group) {
         /* No compatible group. */
         return SECSuccess;
     }
@@ -534,7 +537,7 @@ found:
         return SECSuccess;
     }
 
-    rv = tls13_CreateKeyShare(ss, ss->namedGroupPreferences[i], &keyPair);
+    rv = tls13_CreateKeyShare(ss, group, &keyPair);
     if (rv != SECSuccess) {
         return SECFailure;
     }

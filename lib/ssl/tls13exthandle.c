@@ -239,17 +239,13 @@ tls13_ClientHandleKeyShareXtn(const sslSocket *ss, TLSExtensionData *xtnData,
 
     sslReader rdr = SSL_READER(data->data, data->len);
     rv = tls13_DecodeKeyShareEntry(&rdr, &ks);
-    if (rv != SECSuccess) {
-        PORT_SetError(SSL_ERROR_RX_MALFORMED_KEY_SHARE);
-        return SECFailure;
-    }
-    if (!ks) {
+    if ((rv != SECSuccess) || !ks) {
         ssl3_ExtSendAlert(ss, alert_fatal, illegal_parameter);
         PORT_SetError(SSL_ERROR_RX_MALFORMED_KEY_SHARE);
         return SECFailure;
-    } else {
-        PR_APPEND_LINK(&ks->link, &xtnData->remoteKeyShares);
     }
+
+    PR_APPEND_LINK(&ks->link, &xtnData->remoteKeyShares);
     if (SSL_READER_REMAINING(&rdr)) {
         PORT_SetError(SSL_ERROR_RX_MALFORMED_KEY_SHARE);
         return SECFailure;
@@ -1152,7 +1148,7 @@ tls13_ClientSendEsniXtn(const sslSocket *ss, TLSExtensionData *xtnData,
     sslBuffer sni = SSL_BUFFER(sniBuf);
     const ssl3CipherSuiteDef *suiteDef;
     ssl3KeyMaterial keyMat;
-    SSLAEADCipher aead = NULL;
+    SSLAEADCipher aead;
     PRUint8 outBuf[1024];
     int outLen;
     unsigned int sniLen;
@@ -1221,6 +1217,12 @@ tls13_ClientSendEsniXtn(const sslSocket *ss, TLSExtensionData *xtnData,
         return SECFailure;
     }
     keyShareBufLen = SSL_BUFFER_NEXT(buf) - keyShareBuf;
+
+    if (tls13_GetHashSizeForHash(suiteDef->prf_hash) > sizeof(hash)) {
+        PORT_Assert(PR_FALSE);
+        PORT_SetError(SEC_ERROR_LIBRARY_FAILURE);
+        return SECFailure;
+    }
 
     rv = PK11_HashBuf(ssl3_HashTypeToOID(suiteDef->prf_hash),
                       hash,
@@ -1303,7 +1305,7 @@ tls13_ServerHandleEsniXtn(const sslSocket *ss, TLSExtensionData *xtnData,
     sslReadBuffer buf;
     TLSExtension *keyShareExtension;
     TLS13KeyShareEntry *entry = NULL;
-    ssl3KeyMaterial keyMat;
+    ssl3KeyMaterial keyMat = { NULL };
     SSLAEADCipher aead = NULL;
     PRUint8 *sniBuf = NULL;
     int sniLen;
@@ -1312,8 +1314,6 @@ tls13_ServerHandleEsniXtn(const sslSocket *ss, TLSExtensionData *xtnData,
     sslBuffer aadInput = SSL_BUFFER_EMPTY;
     const PRUint8 *keyShareBuf;
     unsigned int keyShareBufLen;
-
-    PORT_Memset(&keyMat, 0, sizeof(keyMat));
 
     /* If we are doing < TLS 1.3, then ignore this. */
     if (ss->version < SSL_LIBRARY_VERSION_TLS_1_3) {
@@ -1398,7 +1398,7 @@ tls13_ServerHandleEsniXtn(const sslSocket *ss, TLSExtensionData *xtnData,
         goto loser;
     }
 
-    rv = tls13_ComputeESNIKeys((sslSocket *)ss, entry,
+    rv = tls13_ComputeESNIKeys(ss, entry,
                                ss->esniKeys->privKey->keys,
                                suiteDef,
                                hash, keyShareBuf, keyShareBufLen,
@@ -1464,7 +1464,8 @@ tls13_ServerHandleEsniXtn(const sslSocket *ss, TLSExtensionData *xtnData,
     }
     sniItem.len = buf.len + 2;
 
-    /* Check the padding. */
+    /* Check the padding. Note we don't need to do this in constant time
+     * because it's inside the AEAD boundary. */
     /* TODO(ekr@rtfm.com): check that the padding is the right length. */
     PRUint64 tmp;
     while (SSL_READER_REMAINING(&sniRdr)) {
@@ -1505,6 +1506,9 @@ tls13_ServerHandleEsniXtn(const sslSocket *ss, TLSExtensionData *xtnData,
     return SECFailure;
 }
 
+/* Function to check the extension. We don't install a handler here
+ * because we need to check for the presence of the extension as
+ * well and it's easier to do it in one place. */
 SECStatus
 tls13_ClientCheckEsniXtn(sslSocket *ss)
 {

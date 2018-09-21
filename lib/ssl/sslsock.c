@@ -3839,8 +3839,9 @@ ssl_CopyEphemeralKeyPair(sslEphemeralKeyPair *keyPair)
 void
 ssl_FreeEphemeralKeyPair(sslEphemeralKeyPair *keyPair)
 {
-    if (!keyPair)
+    if (!keyPair) {
         return;
+    }
 
     ssl_FreeKeyPair(keyPair->keys);
     PR_REMOVE_LINK(&keyPair->link);
