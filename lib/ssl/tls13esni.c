@@ -34,7 +34,66 @@ const char kHkdfPurposeEsniIv[] = "esni iv";
 
 void
 tls13_DestroyESNIKeys(sslEsniKeys *keys) {
-    // TODO(ekr@rtfm.com): Implement.
+    if (!keys) {
+        return;
+    }
+    SECITEM_FreeItem(&keys->data, PR_FALSE);
+    PORT_Free((void *)keys->dummySni);
+    tls13_DestroyKeyShares(&keys->keyShares);
+    ssl_FreeEphemeralKeyPair(keys->privKey);
+    SECITEM_FreeItem(&keys->suites, PR_FALSE);
+    PORT_ZFree(keys, sizeof(sslEsniKeys));
+}
+
+sslEsniKeys *
+tls13_CopyESNIKeys(sslEsniKeys *okeys) {
+    sslEsniKeys *nkeys;
+    SECStatus rv;
+
+    PORT_Assert(okeys);
+
+    nkeys = PORT_ZNew(sslEsniKeys);
+    if (!nkeys) {
+        return NULL;
+    }
+    rv = SECITEM_CopyItem(NULL, &nkeys->data, &okeys->data);
+    if (rv != SECSuccess) {
+        goto loser;
+    }
+    if (okeys->dummySni) {
+        nkeys->dummySni = PORT_Strdup(okeys->dummySni);
+        if (!nkeys->dummySni) {
+            goto loser;
+        }
+    }
+    for(PRCList *cur_p = PR_LIST_HEAD(&okeys->keyShares);
+        cur_p != &okeys->keyShares;
+        cur_p = PR_NEXT_LINK(cur_p)) {
+        TLS13KeyShareEntry *copy = tls13_CopyKeyShareEntry(
+            (TLS13KeyShareEntry *)cur_p);
+        if (!copy)  {
+            goto loser;
+        }
+        PR_APPEND_LINK(&copy->link, &nkeys->keyShares);
+    }
+    if (okeys->privKey) {
+        nkeys->privKey = ssl_CopyEphemeralKeyPair(okeys->privKey);
+        if (!nkeys->privKey) {
+            goto loser;
+        }
+    }
+    rv = SECITEM_CopyItem(NULL, &nkeys->suites, &okeys->suites);
+    if (rv != SECSuccess) {
+        goto loser;
+    }
+    nkeys->paddedLength = okeys->paddedLength;
+    nkeys->notBefore = okeys->notBefore;
+    nkeys->notAfter = okeys->notAfter;
+    return nkeys;
+
+loser:
+    tls13_DestroyESNIKeys(nkeys);
+    return NULL;
 }
 
 /* Checksum is a 4-byte array. */

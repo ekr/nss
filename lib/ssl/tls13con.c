@@ -3437,6 +3437,24 @@ loser:
     return SECFailure;
 }
 
+TLS13KeyShareEntry *
+tls13_CopyKeyShareEntry(TLS13KeyShareEntry *o) {
+    TLS13KeyShareEntry *n;
+
+    PORT_Assert(o);
+    n = PORT_ZNew(TLS13KeyShareEntry);
+    if (!n) {
+        return NULL;
+    }
+
+    if (SECSuccess != SECITEM_CopyItem(NULL, &n->key_exchange, &o->key_exchange)){
+        PORT_Free(n);
+    }
+    n->group = o->group;
+    return n;
+}
+
+
 void
 tls13_DestroyKeyShareEntry(TLS13KeyShareEntry *offer)
 {

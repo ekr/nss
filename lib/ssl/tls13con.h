@@ -90,6 +90,7 @@ SECStatus tls13_HandleKeyShare(sslSocket *ss,
                                sslKeyPair *keyPair,
                                SSLHashType hash,
                                PK11SymKey **out);
+TLS13KeyShareEntry *tls13_CopyKeyShareEntry(TLS13KeyShareEntry *o);
 void tls13_DestroyKeyShareEntry(TLS13KeyShareEntry *entry);
 void tls13_DestroyKeyShares(PRCList *list);
 SECStatus tls13_CreateKeyShare(sslSocket *ss, const sslNamedGroupDef *groupDef,

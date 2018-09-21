@@ -3780,6 +3780,10 @@ ssl_GetKeyPairRef(sslKeyPair *keyPair)
 void
 ssl_FreeKeyPair(sslKeyPair *keyPair)
 {
+    if (!keyPair) {
+        return;
+    }
+
     PRInt32 newCount = PR_ATOMIC_DECREMENT(&keyPair->refCount);
     if (!newCount) {
         SECKEY_DestroyPrivateKey(keyPair->privKey);
