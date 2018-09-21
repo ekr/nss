@@ -4,6 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include <ctime>
+
 #include "secerr.h"
 #include "ssl.h"
 
@@ -29,11 +31,11 @@ static void SetupESNI(const std::shared_ptr<TlsAgent>& client,
   PRUint8 encoded[1024];
   unsigned int encodedLen;
   uint16_t cipherSuites[] = { TLS_AES_128_GCM_SHA256 };
-
+  auto now = time(nullptr);
   SECStatus rv = SSL_EncodeESNIKeys(
       cipherSuites, PR_ARRAY_SIZE(cipherSuites),
       ssl_grp_ec_curve25519,
-      pub, 100, 0, 0,
+      pub, 100, now, now + 10,
       encoded, &encodedLen, sizeof(encoded));
   ASSERT_EQ(SECSuccess, rv);
   ASSERT_GT(encodedLen, 0U);

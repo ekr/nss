@@ -558,9 +558,13 @@ tls13_ClientSetupESNI(sslSocket *ss)
     SECStatus rv;
     TLS13KeyShareEntry *share;
     const sslNamedGroupDef *group = NULL;
+    PRTime now = PR_Now() / PR_USEC_PER_SEC;
 
-    /* TODO(ekr@rtfm.com): Check for expiry. */
     if (!ss->esniKeys) {
+        return SECSuccess;
+    }
+
+    if ((ss->esniKeys->notBefore > now) || (ss->esniKeys->notAfter < now)) {
         return SECSuccess;
     }
 
