@@ -21,7 +21,6 @@ static const char *kDummySni("dummy.invalid");
 // Tests needed
 // Client
 // - expired
-// - unknown CS
 // - unknown group
 
 // Server
@@ -30,6 +29,21 @@ static const char *kDummySni("dummy.invalid");
 // - remove extension
 
 std::vector<uint16_t> kDefaultSuites = { TLS_AES_128_GCM_SHA256 };
+
+/* Checksum is a 4-byte array. */
+static void UpdateESNIKeysChecksum(DataBuffer* buf) {
+    SECStatus rv;
+    PRUint8 sha256[32];
+
+    /* Stomp the checksum. */
+    PORT_Memset(buf->data() + 2, 0, 4);
+
+    rv = PK11_HashBuf(ssl3_HashTypeToOID(ssl_hash_sha256),
+                      sha256,
+                      buf->data(), buf->len());
+    ASSERT_EQ(SECSuccess, rv);
+    buf->Write(2, sha256, 4);
+}
 
 static void GenerateESNIKey(time_t windowStart,
                             SSLNamedGroup group,
@@ -101,7 +115,6 @@ static void CheckSNIExtension(const DataBuffer& data) {
   ASSERT_EQ(expected, name);
 }
 
-
 static void ClientInstallESNI(std::shared_ptr<TlsAgent>& agent,
                               const DataBuffer& record, PRErrorCode err = 0 ) {
   SECStatus rv = SSL_EnableESNI(agent->ssl_fd(),
@@ -137,6 +150,42 @@ TEST_P(TlsAgentTestClient13, ESNIInvalidVersion) {
   GenerateESNIKey(time_t(0), ssl_grp_ec_curve25519, kDefaultSuites, &record);
   record.Write(0, 0xffff, 2);
   ClientInstallESNI(agent_, record, SSL_ERROR_UNSUPPORTED_VERSION);
+}
+
+TEST_P(TlsAgentTestClient13, ESNIUnknownGroup) {
+  EnsureInit();
+  DataBuffer record;
+  GenerateESNIKey(time_t(0), ssl_grp_ec_curve25519, kDefaultSuites, &record);
+  record.Write(4, 0xffff, 2); // Fake group
+  UpdateESNIKeysChecksum(&record);
+  ClientInstallESNI(agent_, record, 0);
+  auto filter = MakeTlsFilter<TlsExtensionCapture>(agent_,
+                                                   ssl_tls13_encrypted_sni_xtn);
+  agent_->Handshake();
+  ASSERT_TRUE(!filter->captured());
+}
+
+
+TEST_P(TlsAgentTestClient13, ESNINotReady) {
+  EnsureInit();
+  DataBuffer record;
+  GenerateESNIKey(time_t(0)+1000, ssl_grp_ec_curve25519, kDefaultSuites, &record);
+  ClientInstallESNI(agent_, record, 0);
+  auto filter = MakeTlsFilter<TlsExtensionCapture>(agent_,
+                                                   ssl_tls13_encrypted_sni_xtn);
+  agent_->Handshake();
+  ASSERT_TRUE(!filter->captured());
+}
+
+TEST_P(TlsAgentTestClient13, ESNIExpired) {
+  EnsureInit();
+  DataBuffer record;
+  GenerateESNIKey(time_t(0)-1000, ssl_grp_ec_curve25519, kDefaultSuites, &record);
+  ClientInstallESNI(agent_, record, 0);
+  auto filter = MakeTlsFilter<TlsExtensionCapture>(agent_,
+                                                   ssl_tls13_encrypted_sni_xtn);
+  agent_->Handshake();
+  ASSERT_TRUE(!filter->captured());
 }
 
 TEST_P(TlsConnectTls13, ConnectESNI) {
