@@ -465,6 +465,18 @@ class TlsExtensionInjector : public TlsHandshakeFilter {
   const DataBuffer data_;
 };
 
+class TlsExtensionDamager : public TlsExtensionFilter {
+ public:
+  TlsExtensionDamager(const std::shared_ptr<TlsAgent>& a, uint16_t extension)
+      : TlsExtensionFilter(a), extension_(extension) {}
+  PacketFilter::Action FilterExtension(uint16_t extension_type,
+                                       const DataBuffer& input,
+                                       DataBuffer* output) override;
+
+ private:
+  const uint16_t extension_;
+};
+
 typedef std::function<void(void)> VoidFunction;
 
 class AfterRecordN : public TlsRecordFilter {

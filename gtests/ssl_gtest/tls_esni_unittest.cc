@@ -232,14 +232,18 @@ TEST_P(TlsConnectTls13, ConnectMismatchedESNIKeys) {
   DataBuffer record;
   GenerateESNIKey(time(0), ssl_grp_ec_curve25519, kDefaultSuites, &record);
   ClientInstallESNI(client_, record, 0);
-  auto filter = MakeTlsFilter<TlsExtensionCapture>(client_,
-                                                   ssl_server_name_xtn);
   ConnectExpectAlert(server_, illegal_parameter);
   server_->CheckErrorCode(SSL_ERROR_RX_MALFORMED_CLIENT_HELLO);
-  CheckSNIExtension(filter->extension());
 }
 
-// If we remove the confirmatory ESNI extension, the client will be sad.
+TEST_P(TlsConnectTls13, ConnectDamagedESNIExtensionCH) {
+  EnsureTlsSetup();
+  SetupESNI(client_, server_);
+  auto filter = MakeTlsFilter<TlsExtensionDamager>(client_, ssl_tls13_encrypted_sni_xtn);
+  ConnectExpectAlert(server_, illegal_parameter);
+  server_->CheckErrorCode(SSL_ERROR_RX_MALFORMED_CLIENT_HELLO);
+}
+
 TEST_P(TlsConnectTls13, ConnectRemoveESNIExtensionEE) {
   EnsureTlsSetup();
   SetupESNI(client_, server_);

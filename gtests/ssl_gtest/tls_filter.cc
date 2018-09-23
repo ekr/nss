@@ -878,6 +878,16 @@ PacketFilter::Action TlsExtensionDropper::FilterExtension(
   return KEEP;
 }
 
+PacketFilter::Action TlsExtensionDamager::FilterExtension(
+    uint16_t extension_type, const DataBuffer& input, DataBuffer* output) {
+  if (extension_type != extension_) {
+    return KEEP;
+  }
+  *output = input;
+  output->data()[output->len()-1]++;
+  return CHANGE;
+}
+
 PacketFilter::Action TlsExtensionInjector::FilterHandshake(
     const HandshakeHeader& header, const DataBuffer& input,
     DataBuffer* output) {
