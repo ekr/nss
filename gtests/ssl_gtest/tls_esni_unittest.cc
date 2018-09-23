@@ -82,7 +82,8 @@ static void GenerateESNIKey(time_t windowStart,
 }
 
 static void SetupESNI(const std::shared_ptr<TlsAgent>& client,
-                      const std::shared_ptr<TlsAgent>& server) {
+                      const std::shared_ptr<TlsAgent>& server,
+                      SSLNamedGroup group = ssl_grp_ec_curve25519) {
   ScopedSECKEYPublicKey pub;
   ScopedSECKEYPrivateKey priv;
   DataBuffer record;
@@ -202,24 +203,36 @@ TEST_P(TlsAgentTestClient13, ESNIExpired) {
   ASSERT_TRUE(!filter->captured());
 }
 
+static int32_t SniCallback(TlsAgent *agent, const SECItem* srvNameAddr,
+                           PRUint32 srvNameArrSize) {
+  EXPECT_EQ(1U, srvNameArrSize);
+  SECItem expected = {siBuffer,
+                      reinterpret_cast<unsigned char *>(const_cast<char *>("server")), 6 };
+  EXPECT_TRUE(
+      !SECITEM_CompareItem(&expected,
+                           &srvNameAddr[0]));
+  return SECSuccess;
+}
+
 TEST_P(TlsConnectTls13, ConnectESNI) {
   EnsureTlsSetup();
   SetupESNI(client_, server_);
   auto filter = MakeTlsFilter<TlsExtensionCapture>(client_,
                                                    ssl_server_name_xtn);
-  server_->SetSniCallback([](
-      TlsAgent *agent, const SECItem* srvNameAddr,
-      PRUint32 srvNameArrSize) -> int32_t {
-                            EXPECT_EQ(1U, srvNameArrSize);
-                            SECItem expected = {siBuffer,
-                                                reinterpret_cast<unsigned char *>(const_cast<char *>("server")), 6 };
-                            EXPECT_TRUE(
-                                !SECITEM_CompareItem(&expected,
-                                                     &srvNameAddr[0]));
-                            return SECSuccess;
-                          });
+  server_->SetSniCallback(SniCallback);
   Connect();
   CheckSNIExtension(filter->extension());
 }
+
+TEST_P(TlsConnectTls13, ConnectESNIP256) {
+  EnsureTlsSetup();
+  SetupESNI(client_, server_, ssl_grp_ec_secp256r1);
+  auto filter = MakeTlsFilter<TlsExtensionCapture>(client_,
+                                                   ssl_server_name_xtn);
+  server_->SetSniCallback(SniCallback);
+  Connect();
+  CheckSNIExtension(filter->extension());
+}
+
 
 }
