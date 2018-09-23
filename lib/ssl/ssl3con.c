@@ -856,7 +856,7 @@ ssl3_config_match_init(sslSocket *ss)
  * usable with the negotiated TLS version, and is otherwise usable. */
 PRBool
 ssl3_config_match(const ssl3CipherSuiteCfg *suite, PRUint8 policy,
-             const SSLVersionRange *vrange, const sslSocket *ss)
+                  const SSLVersionRange *vrange, const sslSocket *ss)
 {
     const ssl3CipherSuiteDef *cipher_def;
     const ssl3KEADef *kea_def;
@@ -7883,8 +7883,6 @@ ssl3_NegotiateCipherSuiteInner(sslSocket *ss, const SECItem *suites,
     }
     return SECFailure;
 }
-
-
 
 /* Select a cipher suite.
 **

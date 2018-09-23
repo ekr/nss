@@ -429,19 +429,19 @@ tls13_SetupClientHello(sslSocket *ss)
      * TODO(ekr@rtfm.com): be smarter about offering the group
      * that the other side negotiated if we are resuming. */
     if (PR_CLIST_IS_EMPTY(&ss->ephemeralKeyPairs)) {
-            for (i = 0; i < SSL_NAMED_GROUP_COUNT; ++i) {
-                if (!ss->namedGroupPreferences[i]) {
-                    continue;
-                }
-                rv = tls13_AddKeyShare(ss, ss->namedGroupPreferences[i]);
-                if (rv != SECSuccess) {
-                    return SECFailure;
-                }
-                if (++numShares > ss->additionalShares) {
-                    break;
-                }
+        for (i = 0; i < SSL_NAMED_GROUP_COUNT; ++i) {
+            if (!ss->namedGroupPreferences[i]) {
+                continue;
+            }
+            rv = tls13_AddKeyShare(ss, ss->namedGroupPreferences[i]);
+            if (rv != SECSuccess) {
+                return SECFailure;
+            }
+            if (++numShares > ss->additionalShares) {
+                break;
             }
         }
+    }
 
     if (PR_CLIST_IS_EMPTY(&ss->ephemeralKeyPairs)) {
         PORT_SetError(SSL_ERROR_NO_CIPHERS_SUPPORTED);
@@ -3447,13 +3447,12 @@ tls13_CopyKeyShareEntry(TLS13KeyShareEntry *o)
         return NULL;
     }
 
-    if (SECSuccess != SECITEM_CopyItem(NULL, &n->key_exchange, &o->key_exchange)){
+    if (SECSuccess != SECITEM_CopyItem(NULL, &n->key_exchange, &o->key_exchange)) {
         PORT_Free(n);
     }
     n->group = o->group;
     return n;
 }
-
 
 void
 tls13_DestroyKeyShareEntry(TLS13KeyShareEntry *offer)

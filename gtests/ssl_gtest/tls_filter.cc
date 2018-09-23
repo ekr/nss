@@ -878,10 +878,8 @@ PacketFilter::Action TlsExtensionDropper::FilterExtension(
   return KEEP;
 }
 
-PacketFilter::Action
-TlsExtensionDamager::FilterExtension(uint16_t extension_type,
-                                     const DataBuffer& input,
-                                     DataBuffer* output) {
+PacketFilter::Action TlsExtensionDamager::FilterExtension(
+    uint16_t extension_type, const DataBuffer& input, DataBuffer* output) {
   if (extension_type != extension_) {
     return KEEP;
   }

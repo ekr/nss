@@ -473,6 +473,7 @@ class TlsExtensionDamager : public TlsExtensionFilter {
   virtual PacketFilter::Action FilterExtension(uint16_t extension_type,
                                                const DataBuffer& input,
                                                DataBuffer* output);
+
  private:
   uint16_t extension_;
   size_t index_;

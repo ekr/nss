@@ -31,9 +31,9 @@
 const char kHkdfPurposeEsniKey[] = "esni key";
 const char kHkdfPurposeEsniIv[] = "esni iv";
 
-
 void
-tls13_DestroyESNIKeys(sslEsniKeys *keys) {
+tls13_DestroyESNIKeys(sslEsniKeys *keys)
+{
     if (!keys) {
         return;
     }
@@ -46,7 +46,8 @@ tls13_DestroyESNIKeys(sslEsniKeys *keys) {
 }
 
 sslEsniKeys *
-tls13_CopyESNIKeys(sslEsniKeys *okeys) {
+tls13_CopyESNIKeys(sslEsniKeys *okeys)
+{
     sslEsniKeys *nkeys;
     SECStatus rv;
 
@@ -66,12 +67,12 @@ tls13_CopyESNIKeys(sslEsniKeys *okeys) {
             goto loser;
         }
     }
-    for(PRCList *cur_p = PR_LIST_HEAD(&okeys->keyShares);
-        cur_p != &okeys->keyShares;
-        cur_p = PR_NEXT_LINK(cur_p)) {
+    for (PRCList *cur_p = PR_LIST_HEAD(&okeys->keyShares);
+         cur_p != &okeys->keyShares;
+         cur_p = PR_NEXT_LINK(cur_p)) {
         TLS13KeyShareEntry *copy = tls13_CopyKeyShareEntry(
             (TLS13KeyShareEntry *)cur_p);
-        if (!copy)  {
+        if (!copy) {
             goto loser;
         }
         PR_APPEND_LINK(&copy->link, &nkeys->keyShares);
@@ -240,7 +241,8 @@ loser:
     tls13_DestroyESNIKeys(keys);
     PORT_SetError(SSL_ERROR_RX_MALFORMED_ESNI_KEYS);
 
-    return SECFailure;;
+    return SECFailure;
+    ;
 }
 
 /* Encode an ESNI keys structure. We only allow one key
@@ -362,11 +364,11 @@ SSLExp_SetESNIKeyPair(PRFileDesc *fd,
     /* Check the cipher suites. */
     (void)ssl3_config_match_init(ss);
     /* Make sure the cipher suite is OK. */
-    SSLVersionRange vrange = {SSL_LIBRARY_VERSION_TLS_1_3,
-                              SSL_LIBRARY_VERSION_TLS_1_3};
+    SSLVersionRange vrange = { SSL_LIBRARY_VERSION_TLS_1_3,
+                               SSL_LIBRARY_VERSION_TLS_1_3 };
     for (unsigned int i = 0; i < cipherSuitesCount; ++i) {
         const ssl3CipherSuiteCfg *suiteCfg =
-                ssl_LookupCipherSuiteCfg(cipherSuites[i], ss->cipherSuites);
+            ssl_LookupCipherSuiteCfg(cipherSuites[i], ss->cipherSuites);
         if (!suiteCfg) {
             /* Illegal suite. */
             return SECFailure;
@@ -425,7 +427,6 @@ loser:
     tls13_DestroyESNIKeys(keys);
     return SECFailure;
 }
-
 
 SECStatus
 SSLExp_EnableESNI(PRFileDesc *fd,
@@ -522,7 +523,8 @@ tls13_ComputeESNIKeys(const sslSocket *ss,
     rv = PK11_HashBuf(ssl3_HashTypeToOID(suite->prf_hash),
                       hash,
                       SSL_BUFFER_BASE(&esniContents),
-                      SSL_BUFFER_LEN(&esniContents));;
+                      SSL_BUFFER_LEN(&esniContents));
+    ;
     if (rv != SECSuccess) {
         goto loser;
     }
@@ -616,7 +618,6 @@ tls13_ClientSetupESNI(sslSocket *ss)
 
     return SECSuccess;
 }
-
 
 /*
  * struct {
@@ -815,7 +816,7 @@ tls13_ServerDecryptEsniXtn(const sslSocket *ss, PRUint8 *in, unsigned int inLen,
     tls13_DestroyKeyShareEntry(entry);
     return SECSuccess;
 
-  loser:
+loser:
     FATAL_ERROR(CONST_CAST(sslSocket, ss), SSL_ERROR_RX_MALFORMED_ESNI_EXTENSION, illegal_parameter);
     ssl_DestroyKeyMaterial(&keyMat); /* Safe because zeroed. */
     if (entry) {

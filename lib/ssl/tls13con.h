@@ -131,7 +131,6 @@ PRBool tls13_MaybeTls13(sslSocket *ss);
 SSLAEADCipher tls13_GetAead(const ssl3BulkCipherDef *cipherDef);
 void tls13_SetSpecRecordVersion(sslSocket *ss, ssl3CipherSpec *spec);
 
-
 /* Use this instead of FATAL_ERROR when no alert shall be sent. */
 #define LOG_ERROR(ss, prError)                                                     \
     do {                                                                           \

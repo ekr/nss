@@ -1657,8 +1657,8 @@ PK11SymKey *ssl3_GetWrappingKey(sslSocket *ss,
 SECStatus ssl3_FillInCachedSID(sslSocket *ss, sslSessionID *sid,
                                PK11SymKey *secret);
 const ssl3CipherSuiteDef *ssl_LookupCipherSuiteDef(ssl3CipherSuite suite);
-const ssl3CipherSuiteCfg * ssl_LookupCipherSuiteCfg(ssl3CipherSuite suite,
-                                                    const ssl3CipherSuiteCfg *suites);
+const ssl3CipherSuiteCfg *ssl_LookupCipherSuiteCfg(ssl3CipherSuite suite,
+                                                   const ssl3CipherSuiteCfg *suites);
 
 SECStatus ssl3_SelectServerCert(sslSocket *ss);
 SECStatus ssl_PickSignatureScheme(sslSocket *ss,

@@ -34,7 +34,6 @@ ssl_ShouldSendSNIExtension(const sslSocket *ss, const char *url)
     }
 
     return PR_TRUE;
-
 }
 
 /* Format an SNI extension, using the name from the socket's URL,

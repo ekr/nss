@@ -161,8 +161,7 @@ tls13_ClientSendKeyShareXtn(const sslSocket *ss, TLSExtensionData *xtnData,
     }
 
     xtnData->keyShareExtension.len = SSL_BUFFER_NEXT(buf) -
-            xtnData->keyShareExtension.data;
-
+                                     xtnData->keyShareExtension.data;
 
     *added = PR_TRUE;
     return SECSuccess;
@@ -1094,7 +1093,7 @@ tls13_ServerSendHrrCookieXtn(const sslSocket *ss, TLSExtensionData *xtnData,
 
 SECStatus
 tls13_ClientSendEsniXtn(const sslSocket *ss, TLSExtensionData *xtnData,
-                         sslBuffer *buf, PRBool *added)
+                        sslBuffer *buf, PRBool *added)
 {
     SECStatus rv;
     PRUint8 sniBuf[1024];
@@ -1253,7 +1252,7 @@ tls13_ServerSendEsniXtn(const sslSocket *ss, TLSExtensionData *xtnData,
 
 SECStatus
 tls13_ServerHandleEsniXtn(const sslSocket *ss, TLSExtensionData *xtnData,
-                              SECItem *data)
+                          SECItem *data)
 {
     sslReadBuffer buf;
     PRUint8 *plainText = NULL;
@@ -1328,7 +1327,7 @@ tls13_ServerHandleEsniXtn(const sslSocket *ss, TLSExtensionData *xtnData,
 
     PORT_ZFree(plainText, data->len);
     return SECSuccess;
-  loser:
+loser:
     PORT_ZFree(plainText, data->len);
     return SECFailure;
 }
@@ -1340,7 +1339,7 @@ SECStatus
 tls13_ClientCheckEsniXtn(sslSocket *ss)
 {
     TLSExtension *esniExtension =
-            ssl3_FindExtension(ss, ssl_tls13_encrypted_sni_xtn);
+        ssl3_FindExtension(ss, ssl_tls13_encrypted_sni_xtn);
     if (!esniExtension) {
         FATAL_ERROR(ss, SSL_ERROR_MISSING_ESNI_EXTENSION, missing_extension);
         return SECFailure;
@@ -1360,6 +1359,3 @@ tls13_ClientCheckEsniXtn(sslSocket *ss)
 
     return SECSuccess;
 }
-
-
-
