@@ -37,7 +37,7 @@ SSLExp_SetESNIKeyPair(PRFileDesc *fd,
                       SECKEYPublicKey *pubKey,
                       const PRUint16 *cipherSuites,
                       unsigned int cipherSuitesCount,
-                      const char *record, unsigned int recordLen);
+                      const PRUint8 *record, unsigned int recordLen);
 
 /* Set the ESNI keys on a client
  *
@@ -62,7 +62,7 @@ SECStatus SSLExp_EncodeESNIKeys(PRUint16 *cipherSuites, unsigned int cipherSuite
                                 SSLNamedGroup group, SECKEYPublicKey *pubKey,
                                 PRUint16 pad, PRUint64 notBefore, PRUint64 notAfter,
                                 PRUint8 *out, unsigned int *outlen, unsigned int maxlen);
-
+sslEsniKeys *tls13_CopyESNIKeys(sslEsniKeys *okeys);
 void tls13_DestroyESNIKeys(sslEsniKeys *keys);
 SECStatus tls13_ClientSetupESNI(sslSocket *ss);
 SECStatus tls13_ComputeESNIKeys(const sslSocket *ss,

@@ -878,13 +878,16 @@ PacketFilter::Action TlsExtensionDropper::FilterExtension(
   return KEEP;
 }
 
-PacketFilter::Action TlsExtensionDamager::FilterExtension(
-    uint16_t extension_type, const DataBuffer& input, DataBuffer* output) {
+PacketFilter::Action
+TlsExtensionDamager::FilterExtension(uint16_t extension_type,
+                                     const DataBuffer& input,
+                                     DataBuffer* output) {
   if (extension_type != extension_) {
     return KEEP;
   }
+
   *output = input;
-  output->data()[output->len()-1]++;
+  output->data()[index_] += 73;  // Increment selected for maximum damage
   return CHANGE;
 }
 

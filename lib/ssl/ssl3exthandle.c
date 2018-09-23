@@ -109,6 +109,8 @@ ssl3_HandleServerNameXtn(const sslSocket *ss, TLSExtensionData *xtnData,
     }
 
     if (ssl3_ExtensionNegotiated(ss, ssl_tls13_encrypted_sni_xtn)) {
+        /* If we already have ESNI, make sure we don't overwrite
+         * the value. */
         PORT_Assert(ss->version >= SSL_LIBRARY_VERSION_TLS_1_3);
         return SECSuccess;
     }

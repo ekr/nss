@@ -210,9 +210,8 @@ tls13_DecodeKeyShareEntry(sslReader *rdr, TLS13KeyShareEntry **ksp)
     return SECSuccess;
 
 loser:
-    if (ks) {
-        tls13_DestroyKeyShareEntry(ks);
-    }
+    tls13_DestroyKeyShareEntry(ks);
+
     return SECFailure;
 }
 /* Handle an incoming KeyShare extension at the client and copy to
@@ -245,11 +244,11 @@ tls13_ClientHandleKeyShareXtn(const sslSocket *ss, TLSExtensionData *xtnData,
         return SECFailure;
     }
 
-    PR_APPEND_LINK(&ks->link, &xtnData->remoteKeyShares);
     if (SSL_READER_REMAINING(&rdr)) {
         PORT_SetError(SSL_ERROR_RX_MALFORMED_KEY_SHARE);
         return SECFailure;
     }
+    PR_APPEND_LINK(&ks->link, &xtnData->remoteKeyShares);
 
     return SECSuccess;
 }
@@ -316,11 +315,6 @@ tls13_ServerHandleKeyShareXtn(const sslSocket *ss, TLSExtensionData *xtnData,
     PORT_Assert(PR_CLIST_IS_EMPTY(&xtnData->remoteKeyShares));
 
     if (ss->version < SSL_LIBRARY_VERSION_TLS_1_3) {
-        return SECSuccess;
-    }
-
-    if (ssl3_ExtensionNegotiated(ss, ssl_tls13_encrypted_sni_xtn)) {
-        /* We have already read it. */
         return SECSuccess;
     }
 
@@ -1111,6 +1105,7 @@ tls13_ClientSendEsniXtn(const sslSocket *ss, TLSExtensionData *xtnData,
     SSLAEADCipher aead;
     PRUint8 outBuf[1024];
     int outLen;
+    unsigned int sniStart;
     unsigned int sniLen;
     sslBuffer aadInput = SSL_BUFFER_EMPTY;
     PRUint8 *keyShareBuf;
@@ -1134,12 +1129,13 @@ tls13_ClientSendEsniXtn(const sslSocket *ss, TLSExtensionData *xtnData,
     }
 
     /* sni */
+    sniStart = SSL_BUFFER_LEN(&sni);
     rv = ssl3_ClientFormatServerNameXtn(ss, ss->url, xtnData, &sni);
     if (rv != SECSuccess) {
         return SECFailure;
     }
 
-    sniLen = SSL_BUFFER_LEN(&sni) - sizeof(xtnData->esniNonce);
+    sniLen = SSL_BUFFER_LEN(&sni) - sniStart;
     /* Padding. The spec is self-contradictory on how much padding to use, but
      * we opt for the definition in the PDU, which ignores the nonce length. */
     if (ss->esniKeys->paddedLength > sniLen) {

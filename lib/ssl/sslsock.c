@@ -364,7 +364,10 @@ ssl_DupSocket(sslSocket *os)
 
         if (os->esniKeys) {
             /* TODO(ekr@rtfm.com): implement. */
-            abort();
+            ss->esniKeys = tls13_CopyESNIKeys(os->esniKeys);
+            if (!ss->esniKeys) {
+                goto loser;
+            }
         }
 
         /* Create security data */

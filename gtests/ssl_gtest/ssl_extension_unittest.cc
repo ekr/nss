@@ -44,28 +44,6 @@ class TlsExtensionTruncator : public TlsExtensionFilter {
   size_t length_;
 };
 
-class TlsExtensionDamager : public TlsExtensionFilter {
- public:
-  TlsExtensionDamager(const std::shared_ptr<TlsAgent>& a, uint16_t extension,
-                      size_t index)
-      : TlsExtensionFilter(a), extension_(extension), index_(index) {}
-  virtual PacketFilter::Action FilterExtension(uint16_t extension_type,
-                                               const DataBuffer& input,
-                                               DataBuffer* output) {
-    if (extension_type != extension_) {
-      return KEEP;
-    }
-
-    *output = input;
-    output->data()[index_] += 73;  // Increment selected for maximum damage
-    return CHANGE;
-  }
-
- private:
-  uint16_t extension_;
-  size_t index_;
-};
-
 class TlsExtensionAppender : public TlsHandshakeFilter {
  public:
   TlsExtensionAppender(const std::shared_ptr<TlsAgent>& a,

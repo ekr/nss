@@ -3222,7 +3222,6 @@ tls13_GetAead(const ssl3BulkCipherDef *cipherDef)
             return tls13_AESGCM;
         case ssl_calg_chacha20:
             return tls13_ChaCha20Poly1305;
-            break;
         default:
             PORT_Assert(PR_FALSE);
             PORT_SetError(SEC_ERROR_LIBRARY_FAILURE);
@@ -3438,7 +3437,8 @@ loser:
 }
 
 TLS13KeyShareEntry *
-tls13_CopyKeyShareEntry(TLS13KeyShareEntry *o) {
+tls13_CopyKeyShareEntry(TLS13KeyShareEntry *o)
+{
     TLS13KeyShareEntry *n;
 
     PORT_Assert(o);
@@ -3458,6 +3458,9 @@ tls13_CopyKeyShareEntry(TLS13KeyShareEntry *o) {
 void
 tls13_DestroyKeyShareEntry(TLS13KeyShareEntry *offer)
 {
+    if (!offer) {
+        return;
+    }
     SECITEM_ZfreeItem(&offer->key_exchange, PR_FALSE);
     PORT_ZFree(offer, sizeof(*offer));
 }

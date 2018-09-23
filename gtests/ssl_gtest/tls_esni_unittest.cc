@@ -239,8 +239,9 @@ TEST_P(TlsConnectTls13, ConnectMismatchedESNIKeys) {
 TEST_P(TlsConnectTls13, ConnectDamagedESNIExtensionCH) {
   EnsureTlsSetup();
   SetupESNI(client_, server_);
-  auto filter = MakeTlsFilter<TlsExtensionDamager>(client_, ssl_tls13_encrypted_sni_xtn);
-  ConnectExpectAlert(server_, illegal_parameter);
+  auto filter = MakeTlsFilter<TlsExtensionDamager>(
+      client_, ssl_tls13_encrypted_sni_xtn, 50); // in the ciphertext
+  ConnectExpectAlert(server_,               illegal_parameter);
   server_->CheckErrorCode(SSL_ERROR_RX_MALFORMED_CLIENT_HELLO);
 }
 

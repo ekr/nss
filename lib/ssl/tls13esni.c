@@ -343,7 +343,7 @@ SSLExp_SetESNIKeyPair(PRFileDesc *fd,
                       SECKEYPublicKey *pubKey,
                       const PRUint16 *cipherSuites,
                       unsigned int cipherSuitesCount,
-                      const char *record, unsigned int recordLen)
+                      const PRUint8 *record, unsigned int recordLen)
 {
     sslSocket *ss;
     SECStatus rv;
@@ -406,7 +406,7 @@ SSLExp_SetESNIKeyPair(PRFileDesc *fd,
 
     /* Copy the key record. */
     rv = SECITEM_MakeItem(NULL, &keys->data,
-                          (const unsigned char *)record, recordLen);
+                          record, recordLen);
     if (rv != SECSuccess) {
         goto loser;
     }
@@ -422,10 +422,7 @@ SSLExp_SetESNIKeyPair(PRFileDesc *fd,
     return SECSuccess;
 
 loser:
-    if (keys) {
-       tls13_DestroyESNIKeys(keys);
-    }
-
+    tls13_DestroyESNIKeys(keys);
     return SECFailure;
 }
 
@@ -661,29 +658,14 @@ tls13_FormatEsniAADInput(sslBuffer *aadInput,
     return SECSuccess;
 }
 
-SECStatus
-tls13_ServerDecryptEsniXtn(const sslSocket *ss, PRUint8 *in, unsigned int inLen,
-                           PRUint8 *out, int *outLen, int maxLen)
+static SECStatus
+tls13_ServerGetEsniAEAD(const sslSocket *ss, PRUint64 suite,
+                        const ssl3CipherSuiteDef **suiteDefp,
+                        SSLAEADCipher *aeadp)
 {
-    sslReader rdr = SSL_READER(in, inLen);
-    PRUint64 suite;
-    const ssl3CipherSuiteDef *suiteDef;
-    TLSExtension *keyShareExtension;
-    TLS13KeyShareEntry *entry = NULL;
-    ssl3KeyMaterial keyMat = { NULL };
-    SSLAEADCipher aead = NULL;
-    sslBuffer aadInput = SSL_BUFFER_EMPTY;
-    const PRUint8 *keyShareBuf;
-    sslReadBuffer buf;
-    unsigned int keyShareBufLen;
-    PRUint8 hash[64];
     SECStatus rv;
-
-    /* Read the cipher suite. */
-    rv = sslRead_ReadNumber(&rdr, 2, &suite);
-    if (rv != SECSuccess) {
-        return SECFailure;
-    }
+    const ssl3CipherSuiteDef *suiteDef;
+    SSLAEADCipher aead;
 
     /* Check against the suite list for ESNI */
     PRBool csMatch = PR_FALSE;
@@ -702,7 +684,7 @@ tls13_ServerDecryptEsniXtn(const sslSocket *ss, PRUint8 *in, unsigned int inLen,
         }
     }
     if (!csMatch) {
-        goto loser;
+        return SECFailure;
     }
 
     suiteDef = ssl_LookupCipherSuiteDef(suite);
@@ -713,6 +695,41 @@ tls13_ServerDecryptEsniXtn(const sslSocket *ss, PRUint8 *in, unsigned int inLen,
     aead = tls13_GetAead(ssl_GetBulkCipherDef(suiteDef));
     if (!aead) {
         return SECFailure;
+    }
+
+    *suiteDefp = suiteDef;
+    *aeadp = aead;
+    return SECSuccess;
+}
+SECStatus
+tls13_ServerDecryptEsniXtn(const sslSocket *ss, PRUint8 *in, unsigned int inLen,
+                           PRUint8 *out, int *outLen, int maxLen)
+{
+    sslReader rdr = SSL_READER(in, inLen);
+    PRUint64 suite;
+    const ssl3CipherSuiteDef *suiteDef;
+    SSLAEADCipher aead = NULL;
+    TLSExtension *keyShareExtension;
+    TLS13KeyShareEntry *entry = NULL;
+    ssl3KeyMaterial keyMat = { NULL };
+
+    sslBuffer aadInput = SSL_BUFFER_EMPTY;
+    const PRUint8 *keyShareBuf;
+    sslReadBuffer buf;
+    unsigned int keyShareBufLen;
+    PRUint8 hash[64];
+    SECStatus rv;
+
+    /* Read the cipher suite. */
+    rv = sslRead_ReadNumber(&rdr, 2, &suite);
+    if (rv != SECSuccess) {
+        goto loser;
+    }
+
+    /* Find the AEAD */
+    rv = tls13_ServerGetEsniAEAD(ss, suite, &suiteDef, &aead);
+    if (rv != SECSuccess) {
+        goto loser;
     }
 
     /* Note where the KeyShare starts. */

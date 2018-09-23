@@ -108,7 +108,8 @@ struct TLSExtensionDataStr {
     SECItem keyShareExtension; /* Pointer to serialized extensions. */
     ssl3CipherSuite esniSuite;
     sslEphemeralKeyPair *esniPrivateKey;
-    TLS13KeyShareEntry *peerEsniShare; /* Pointer into |ss->peerEsniKeys|. */
+    /* Pointer into |ss->esniKeys->keyShares| */
+    TLS13KeyShareEntry *peerEsniShare;
     PRUint8 esniNonce[TLS13_ESNI_NONCE_SIZE];
 };
 
