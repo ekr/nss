@@ -17,12 +17,6 @@ namespace nss_test {
 
 static const char *kDummySni("dummy.invalid");
 
-
-// Server
-// - hash mismatch
-// - invalid encoding
-// - remove extension
-
 std::vector<uint16_t> kDefaultSuites = { TLS_AES_128_GCM_SHA256 };
 std::vector<uint16_t> kBogusSuites = { 0 };
 
@@ -241,7 +235,45 @@ TEST_P(TlsConnectTls13, ConnectMismatchedESNIKeys) {
   auto filter = MakeTlsFilter<TlsExtensionCapture>(client_,
                                                    ssl_server_name_xtn);
   ConnectExpectAlert(server_, illegal_parameter);
+  server_->CheckErrorCode(SSL_ERROR_RX_MALFORMED_CLIENT_HELLO);
   CheckSNIExtension(filter->extension());
 }
+
+// If we remove the confirmatory ESNI extension, the client will be sad.
+TEST_P(TlsConnectTls13, ConnectRemoveESNIExtensionEE) {
+  EnsureTlsSetup();
+  SetupESNI(client_, server_);
+  auto filter = MakeTlsFilter<TlsExtensionDropper>(server_, ssl_tls13_encrypted_sni_xtn);
+  filter->EnableDecryption();
+  ConnectExpectAlert(client_, missing_extension);
+  client_->CheckErrorCode(SSL_ERROR_MISSING_ESNI_EXTENSION);
+}
+
+TEST_P(TlsConnectTls13, ConnectShortESNIExtensionEE) {
+  EnsureTlsSetup();
+  SetupESNI(client_, server_);
+  DataBuffer shortNonce;
+  auto filter = MakeTlsFilter<TlsExtensionReplacer>(server_,
+                                                    ssl_tls13_encrypted_sni_xtn,
+                                                    shortNonce);
+  filter->EnableDecryption();
+  ConnectExpectAlert(client_, illegal_parameter);
+  client_->CheckErrorCode(SSL_ERROR_RX_MALFORMED_ESNI_EXTENSION);
+}
+
+TEST_P(TlsConnectTls13, ConnectBogusESNIExtensionEE) {
+  EnsureTlsSetup();
+  SetupESNI(client_, server_);
+  const uint8_t bogusNonceBuf[16] = { 0 };
+  DataBuffer bogusNonce(bogusNonceBuf, sizeof(bogusNonceBuf));
+  auto filter = MakeTlsFilter<TlsExtensionReplacer>(server_,
+                                                    ssl_tls13_encrypted_sni_xtn,
+                                                    bogusNonce);
+  filter->EnableDecryption();
+  ConnectExpectAlert(client_, illegal_parameter);
+  client_->CheckErrorCode(SSL_ERROR_RX_MALFORMED_ESNI_EXTENSION);
+}
+
+
 
 }
