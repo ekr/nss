@@ -438,7 +438,7 @@ SSLExp_EnableESNI(PRFileDesc *fd,
 {
     sslSocket *ss;
     sslEsniKeys *keys = NULL;
-    SECItem data = { siBuffer, esniKeys, esniKeysLen };
+    SECItem data = { siBuffer, CONST_CAST(PRUint8, esniKeys), esniKeysLen };
     SECStatus rv;
 
     ss = ssl_FindSocket(fd);
@@ -799,7 +799,7 @@ tls13_ServerDecryptEsniXtn(const sslSocket *ss, PRUint8 *in, unsigned int inLen,
     return SECSuccess;
 
   loser:
-    PORT_SetError(SSL_ERROR_RX_MALFORMED_ESNI_EXTENSION);
+    FATAL_ERROR(CONST_CAST(sslSocket, ss), SSL_ERROR_RX_MALFORMED_ESNI_EXTENSION, illegal_parameter);
     ssl_DestroyKeyMaterial(&keyMat); /* Safe because zeroed. */
     if (entry) {
         tls13_DestroyKeyShareEntry(entry);

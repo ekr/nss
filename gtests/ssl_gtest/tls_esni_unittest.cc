@@ -18,10 +18,6 @@ namespace nss_test {
 static const char *kDummySni("dummy.invalid");
 
 
-// Tests needed
-// Client
-// - Unknown CS
-//
 // Server
 // - hash mismatch
 // - invalid encoding
@@ -131,15 +127,16 @@ static void ClientInstallESNI(std::shared_ptr<TlsAgent>& agent,
 TEST_P(TlsAgentTestClient13, ESNIInstall) {
   EnsureInit();
   DataBuffer record;
-  GenerateESNIKey(time_t(0), ssl_grp_ec_curve25519, kDefaultSuites, &record);
+  GenerateESNIKey(time(0), ssl_grp_ec_curve25519, kDefaultSuites, &record);
   ClientInstallESNI(agent_, record);
 }
 
+// The next set of tests fail at setup time.
 TEST_P(TlsAgentTestClient13, ESNIInvalidHash) {
 
   EnsureInit();
   DataBuffer record;
-  GenerateESNIKey(time_t(0), ssl_grp_ec_curve25519, kDefaultSuites, &record);
+  GenerateESNIKey(time(0), ssl_grp_ec_curve25519, kDefaultSuites, &record);
   record.data()[2]++;
   ClientInstallESNI(agent_, record, SSL_ERROR_RX_MALFORMED_ESNI_KEYS);
 }
@@ -148,16 +145,17 @@ TEST_P(TlsAgentTestClient13, ESNIInvalidVersion) {
 
   EnsureInit();
   DataBuffer record;
-  GenerateESNIKey(time_t(0), ssl_grp_ec_curve25519, kDefaultSuites, &record);
+  GenerateESNIKey(time(0), ssl_grp_ec_curve25519, kDefaultSuites, &record);
   record.Write(0, 0xffff, 2);
   ClientInstallESNI(agent_, record, SSL_ERROR_UNSUPPORTED_VERSION);
 }
 
+// The following tests fail by ignoring the ESNI block.
 TEST_P(TlsAgentTestClient13, ESNIUnknownGroup) {
   EnsureInit();
   DataBuffer record;
-  GenerateESNIKey(time_t(0), ssl_grp_ec_curve25519, kDefaultSuites, &record);
-  record.Write(4, 0xffff, 2); // Fake group
+  GenerateESNIKey(time(0), ssl_grp_ec_curve25519, kDefaultSuites, &record);
+  record.Write(8, 0xffff, 2); // Fake group
   UpdateESNIKeysChecksum(&record);
   ClientInstallESNI(agent_, record, 0);
   auto filter = MakeTlsFilter<TlsExtensionCapture>(agent_,
@@ -170,8 +168,7 @@ TEST_P(TlsAgentTestClient13, ESNIUnknownGroup) {
 TEST_P(TlsAgentTestClient13, ESNIUnknownCS) {
   EnsureInit();
   DataBuffer record;
-  GenerateESNIKey(time_t(0), ssl_grp_ec_curve25519, kBogusSuites, &record);
-  record.Write(4, 0xffff, 2); // Fake group
+  GenerateESNIKey(time(0), ssl_grp_ec_curve25519, kBogusSuites, &record);
   UpdateESNIKeysChecksum(&record);
   ClientInstallESNI(agent_, record, 0);
   auto filter = MakeTlsFilter<TlsExtensionCapture>(agent_,
@@ -184,7 +181,7 @@ TEST_P(TlsAgentTestClient13, ESNIUnknownCS) {
 TEST_P(TlsAgentTestClient13, ESNINotReady) {
   EnsureInit();
   DataBuffer record;
-  GenerateESNIKey(time_t(0)+1000, ssl_grp_ec_curve25519, kDefaultSuites, &record);
+  GenerateESNIKey(time(0)+1000, ssl_grp_ec_curve25519, kDefaultSuites, &record);
   ClientInstallESNI(agent_, record, 0);
   auto filter = MakeTlsFilter<TlsExtensionCapture>(agent_,
                                                    ssl_tls13_encrypted_sni_xtn);
@@ -195,7 +192,7 @@ TEST_P(TlsAgentTestClient13, ESNINotReady) {
 TEST_P(TlsAgentTestClient13, ESNIExpired) {
   EnsureInit();
   DataBuffer record;
-  GenerateESNIKey(time_t(0)-1000, ssl_grp_ec_curve25519, kDefaultSuites, &record);
+  GenerateESNIKey(time(0)-1000, ssl_grp_ec_curve25519, kDefaultSuites, &record);
   ClientInstallESNI(agent_, record, 0);
   auto filter = MakeTlsFilter<TlsExtensionCapture>(agent_,
                                                    ssl_tls13_encrypted_sni_xtn);
@@ -234,5 +231,17 @@ TEST_P(TlsConnectTls13, ConnectESNIP256) {
   CheckSNIExtension(filter->extension());
 }
 
+TEST_P(TlsConnectTls13, ConnectMismatchedESNIKeys) {
+  EnsureTlsSetup();
+  SetupESNI(client_, server_);
+  // Now install a new set of keys on the client, so we have a mismatch.
+  DataBuffer record;
+  GenerateESNIKey(time(0), ssl_grp_ec_curve25519, kDefaultSuites, &record);
+  ClientInstallESNI(client_, record, 0);
+  auto filter = MakeTlsFilter<TlsExtensionCapture>(client_,
+                                                   ssl_server_name_xtn);
+  ConnectExpectAlert(server_, illegal_parameter);
+  CheckSNIExtension(filter->extension());
+}
 
 }
