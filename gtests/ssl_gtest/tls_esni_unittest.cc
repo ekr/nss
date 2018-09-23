@@ -19,6 +19,7 @@ static const char* kDummySni("dummy.invalid");
 
 std::vector<uint16_t> kDefaultSuites = {TLS_AES_256_GCM_SHA384,
                                         TLS_AES_128_GCM_SHA256};
+std::vector<uint16_t> kChaChaSuite = {TLS_CHACHA20_POLY1305_SHA256};
 std::vector<uint16_t> kBogusSuites = {0};
 std::vector<uint16_t> kTls12Suites = {TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256};
 
@@ -267,6 +268,25 @@ TEST_P(TlsConnectTls13, ConnectESNINoDummy) {
   Connect();
   ASSERT_TRUE(!cfilter->captured());
   ASSERT_TRUE(!sfilter->captured());
+}
+
+/* Tell the client that it supports AES but the server that it supports ChaCha */
+TEST_P(TlsConnectTls13, ConnectESNICSMismatch) {
+  EnsureTlsSetup();
+  ScopedSECKEYPublicKey pub;
+  ScopedSECKEYPrivateKey priv;
+  DataBuffer record;
+
+  GenerateESNIKey(time(nullptr), ssl_grp_ec_curve25519, kDefaultSuites, &record,
+                  &pub, &priv);
+  SECStatus rv = SSL_SetESNIKeyPair(
+      server_->ssl_fd(), ssl_grp_ec_curve25519, priv.get(), pub.get(),
+      &kChaChaSuite[0], kChaChaSuite.size(), record.data(), record.len());
+  ASSERT_EQ(SECSuccess, rv);
+  rv = SSL_EnableESNI(client_->ssl_fd(), record.data(), record.len(), "");
+  ASSERT_EQ(SECSuccess, rv);
+  ConnectExpectAlert(server_, illegal_parameter);
+  server_->CheckErrorCode(SSL_ERROR_RX_MALFORMED_CLIENT_HELLO);
 }
 
 TEST_P(TlsConnectTls13, ConnectESNIP256) {
