@@ -281,7 +281,7 @@ SSLExp_EncodeESNIKeys(PRUint16 *cipherSuites, unsigned int cipherSuiteCount,
     }
 
     /* Cipher suites. */
-    rv = sslBuffer_AppendNumber(&b, 2, cipherSuiteCount * 2);
+    rv = sslBuffer_AppendNumber(&b, cipherSuiteCount * 2, 2);
     if (rv != SECSuccess) {
         goto loser;
     }
