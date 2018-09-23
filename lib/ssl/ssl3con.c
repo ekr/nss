@@ -8043,9 +8043,12 @@ ssl3_ServerCallSNICallback(sslSocket *ss)
                 }
                 /* Need to tell the client that application has picked
                  * the name from the offered list and reconfigured the socket.
+                 * Don't do this if we negotiated ESNI.
                  */
-                ssl3_RegisterExtensionSender(ss, &ss->xtnData, ssl_server_name_xtn,
-                                             ssl_SendEmptyExtension);
+                if (!ssl3_ExtensionNegotiated(ss, ssl_tls13_encrypted_sni_xtn)) {
+                    ssl3_RegisterExtensionSender(ss, &ss->xtnData, ssl_server_name_xtn,
+                                                 ssl_SendEmptyExtension);
+                }
             } else {
                 /* Callback returned index outside of the boundary. */
                 PORT_Assert((unsigned int)ret < ss->xtnData.sniNameArrSize);

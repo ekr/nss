@@ -202,19 +202,52 @@ TEST_P(TlsConnectTls13, ConnectESNI) {
   SetupESNI(client_, server_);
   auto filter =
       MakeTlsFilter<TlsExtensionCapture>(client_, ssl_server_name_xtn);
+  auto cfilter =
+      MakeTlsFilter<TlsExtensionCapture>(client_, ssl_server_name_xtn);
+  auto sfilter =
+      MakeTlsFilter<TlsExtensionCapture>(server_, ssl_server_name_xtn);
   server_->SetSniCallback(SniCallback);
   Connect();
-  CheckSNIExtension(filter->extension());
+  CheckSNIExtension(cfilter->extension());
+  ASSERT_TRUE(!sfilter->captured());
+}
+
+TEST_P(TlsConnectTls13, ConnectESNINoDummy) {
+  EnsureTlsSetup();
+  ScopedSECKEYPublicKey pub;
+  ScopedSECKEYPrivateKey priv;
+  DataBuffer record;
+
+  GenerateESNIKey(time(nullptr), ssl_grp_ec_curve25519, kDefaultSuites, &record,
+                  &pub, &priv);
+  SECStatus rv = SSL_SetESNIKeyPair(
+      server_->ssl_fd(), ssl_grp_ec_curve25519, priv.get(), pub.get(),
+      &kDefaultSuites[0], kDefaultSuites.size(), record.data(), record.len());
+  ASSERT_EQ(SECSuccess, rv);
+  rv = SSL_EnableESNI(client_->ssl_fd(), record.data(), record.len(), "");
+  ASSERT_EQ(SECSuccess, rv);
+
+  auto cfilter =
+      MakeTlsFilter<TlsExtensionCapture>(client_, ssl_server_name_xtn);
+  auto sfilter =
+      MakeTlsFilter<TlsExtensionCapture>(server_, ssl_server_name_xtn);
+  server_->SetSniCallback(SniCallback);
+  Connect();
+  ASSERT_TRUE(!cfilter->captured());
+  ASSERT_TRUE(!sfilter->captured());
 }
 
 TEST_P(TlsConnectTls13, ConnectESNIP256) {
   EnsureTlsSetup();
   SetupESNI(client_, server_, ssl_grp_ec_secp256r1);
-  auto filter =
+  auto cfilter =
       MakeTlsFilter<TlsExtensionCapture>(client_, ssl_server_name_xtn);
+  auto sfilter =
+      MakeTlsFilter<TlsExtensionCapture>(server_, ssl_server_name_xtn);
   server_->SetSniCallback(SniCallback);
   Connect();
-  CheckSNIExtension(filter->extension());
+  CheckSNIExtension(cfilter->extension());
+  ASSERT_TRUE(!sfilter->captured());
 }
 
 TEST_P(TlsConnectTls13, ConnectMismatchedESNIKeys) {
