@@ -212,6 +212,23 @@ TEST_P(TlsConnectTls13, ConnectESNI) {
   ASSERT_TRUE(!sfilter->captured());
 }
 
+TEST_P(TlsConnectTls13, ConnectESNIHrr) {
+  EnsureTlsSetup();
+  const std::vector<SSLNamedGroup> groups = {ssl_grp_ec_secp384r1};
+  server_->ConfigNamedGroups(groups);
+  SetupESNI(client_, server_);
+  auto hrr_capture = MakeTlsFilter<TlsHandshakeRecorder>(
+      server_, kTlsHandshakeHelloRetryRequest);
+  auto filter =
+      MakeTlsFilter<TlsExtensionCapture>(client_, ssl_server_name_xtn);
+  auto cfilter =
+      MakeTlsFilter<TlsExtensionCapture>(client_, ssl_server_name_xtn);
+  server_->SetSniCallback(SniCallback);
+  Connect();
+  CheckSNIExtension(cfilter->extension());
+  EXPECT_NE(0UL, hrr_capture->buffer().len());
+}
+
 TEST_P(TlsConnectTls13, ConnectESNINoDummy) {
   EnsureTlsSetup();
   ScopedSECKEYPublicKey pub;
