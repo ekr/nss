@@ -20,15 +20,15 @@ static const char *kDummySni("dummy.invalid");
 
 // Tests needed
 // Client
-// - expired
-// - unknown group
-
+// - Unknown CS
+//
 // Server
 // - hash mismatch
 // - invalid encoding
 // - remove extension
 
 std::vector<uint16_t> kDefaultSuites = { TLS_AES_128_GCM_SHA256 };
+std::vector<uint16_t> kBogusSuites = { 0 };
 
 /* Checksum is a 4-byte array. */
 static void UpdateESNIKeysChecksum(DataBuffer* buf) {
@@ -162,9 +162,23 @@ TEST_P(TlsAgentTestClient13, ESNIUnknownGroup) {
   auto filter = MakeTlsFilter<TlsExtensionCapture>(agent_,
                                                    ssl_tls13_encrypted_sni_xtn);
   agent_->Handshake();
+  ASSERT_EQ(TlsAgent::STATE_CONNECTING, agent_->state());
   ASSERT_TRUE(!filter->captured());
 }
 
+TEST_P(TlsAgentTestClient13, ESNIUnknownCS) {
+  EnsureInit();
+  DataBuffer record;
+  GenerateESNIKey(time_t(0), ssl_grp_ec_curve25519, kBogusSuites, &record);
+  record.Write(4, 0xffff, 2); // Fake group
+  UpdateESNIKeysChecksum(&record);
+  ClientInstallESNI(agent_, record, 0);
+  auto filter = MakeTlsFilter<TlsExtensionCapture>(agent_,
+                                                   ssl_tls13_encrypted_sni_xtn);
+  agent_->Handshake();
+  ASSERT_EQ(TlsAgent::STATE_CONNECTING, agent_->state());
+  ASSERT_TRUE(!filter->captured());
+}
 
 TEST_P(TlsAgentTestClient13, ESNINotReady) {
   EnsureInit();
