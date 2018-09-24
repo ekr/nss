@@ -216,15 +216,23 @@ static int32_t SniCallback(TlsAgent* agent, const SECItem* srvNameAddr,
 TEST_P(TlsConnectTls13, ConnectESNI) {
   EnsureTlsSetup();
   SetupESNI(client_, server_);
-  auto filter =
+  auto cFilterSni =
       MakeTlsFilter<TlsExtensionCapture>(client_, ssl_server_name_xtn);
-  auto cfilter =
-      MakeTlsFilter<TlsExtensionCapture>(client_, ssl_server_name_xtn);
+  auto cFilterEsni =
+      MakeTlsFilter<TlsExtensionCapture>(client_, ssl_tls13_encrypted_sni_xtn);
+  client_->SetFilter(
+      std::make_shared<ChainedPacketFilter>(
+          ChainedPacketFilterInit({cFilterSni, cFilterEsni})));
   auto sfilter =
       MakeTlsFilter<TlsExtensionCapture>(server_, ssl_server_name_xtn);
   server_->SetSniCallback(SniCallback);
   Connect();
-  CheckSNIExtension(cfilter->extension());
+  CheckSNIExtension(cFilterSni->extension());
+  ASSERT_TRUE(cFilterEsni->captured());
+  // Check that our most preferred suite got chosen.
+  uint32_t suite;
+  ASSERT_TRUE(cFilterEsni->extension().Read(0, 2, &suite));
+  ASSERT_EQ(TLS_AES_128_GCM_SHA256, static_cast<PRUint16>(suite));
   ASSERT_TRUE(!sfilter->captured());
 }
 
