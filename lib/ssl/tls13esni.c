@@ -340,19 +340,14 @@ loser:
 
 SECStatus
 SSLExp_SetESNIKeyPair(PRFileDesc *fd,
-                      SSLNamedGroup group,
                       SECKEYPrivateKey *privKey,
-                      SECKEYPublicKey *pubKey,
-                      const PRUint16 *cipherSuites,
-                      unsigned int cipherSuitesCount,
                       const PRUint8 *record, unsigned int recordLen)
 {
     sslSocket *ss;
     SECStatus rv;
     sslEsniKeys *keys = NULL;
-    /* Way too big but we don't have a separate 1.3 list. */
-    PRUint8 csBuf[ssl_V3_SUITES_IMPLEMENTED * 2];
-    sslBuffer cs = SSL_BUFFER(csBuf);
+    SECKEYPublicKey *pubKey = NULL;
+    SECItem data = { siBuffer, CONST_CAST(PRUint8, record), recordLen };
 
     ss = ssl_FindSocket(fd);
     if (!ss) {
@@ -361,69 +356,74 @@ SSLExp_SetESNIKeyPair(PRFileDesc *fd,
         return SECFailure;
     }
 
+    rv = tls13_DecodeESNIKeys(&data, &keys);
+    if (rv != SECSuccess) {
+        return SECFailure;
+    }
+
     /* Check the cipher suites. */
     (void)ssl3_config_match_init(ss);
     /* Make sure the cipher suite is OK. */
     SSLVersionRange vrange = { SSL_LIBRARY_VERSION_TLS_1_3,
                                SSL_LIBRARY_VERSION_TLS_1_3 };
-    for (unsigned int i = 0; i < cipherSuitesCount; ++i) {
-        const ssl3CipherSuiteCfg *suiteCfg =
-            ssl_LookupCipherSuiteCfg(cipherSuites[i], ss->cipherSuites);
-        if (!suiteCfg) {
-            /* Illegal suite. */
-            return SECFailure;
-        }
 
-        if (!ssl3_config_match(suiteCfg, ss->ssl3.policy, &vrange, ss)) {
-            /* Illegal suite. */
-            return SECFailure;
-        }
+    sslReader csrdr = SSL_READER(keys->suites.data,
+                                 keys->suites.len);
+    while (SSL_READER_REMAINING(&csrdr)) {
+        PRUint64 asuite;
 
-        rv = sslBuffer_AppendNumber(&cs, cipherSuites[i], 2);
+        rv = sslRead_ReadNumber(&csrdr, 2, &asuite);
         if (rv != SECSuccess) {
             return SECFailure;
         }
+        const ssl3CipherSuiteCfg *suiteCfg =
+                ssl_LookupCipherSuiteCfg(asuite, ss->cipherSuites);
+        if (!ssl3_config_match(suiteCfg, ss->ssl3.policy, &vrange, ss)) {
+            /* Illegal suite. */
+            PORT_SetError(SEC_ERROR_INVALID_ARGS);
+            return SECFailure;
+        }
     }
 
-    keys = PORT_ZNew(sslEsniKeys);
-    if (!keys) {
-        return SECFailure;
+    if (PR_CLIST_IS_EMPTY(&keys->keyShares)) {
+        goto loser;
     }
-    PR_INIT_CLIST(&keys->keyShares);
+    TLS13KeyShareEntry *entry = (TLS13KeyShareEntry*)PR_LIST_HEAD(
+        &keys->keyShares);
+    if (entry->group->keaType != ssl_kea_ecdh) {
+        PORT_SetError(PR_INVALID_ARGUMENT_ERROR);
+        goto loser;
+    }
+    pubKey = PORT_ZNew(SECKEYPublicKey);
+    if (!pubKey) {
+        goto loser;
+    }
+    pubKey->pkcs11Slot = NULL;
+    pubKey->pkcs11ID = CK_INVALID_HANDLE;
+    rv = ssl_ImportECDHKeyShare(pubKey,
+                                entry->key_exchange.data,
+                                entry->key_exchange.len,
+                                entry->group);
+    if (rv != SECSuccess) {
+        goto loser;
+    }
 
     /* This call checks that the group is non-null. */
     privKey = SECKEY_CopyPrivateKey(privKey);
     if (!privKey) {
         goto loser;
     }
-    pubKey = SECKEY_CopyPublicKey(pubKey);
-    if (!pubKey) {
-        goto loser;
-    }
     keys->privKey = ssl_NewEphemeralKeyPair(
-        ssl_LookupNamedGroup(group), privKey, pubKey);
+        entry->group, privKey, pubKey);
     if (!keys->privKey) {
         goto loser;
     }
-
-    /* Copy the key record. */
-    rv = SECITEM_MakeItem(NULL, &keys->data,
-                          record, recordLen);
-    if (rv != SECSuccess) {
-        goto loser;
-    }
-
-    /* Record cipher suites. */
-    rv = SECITEM_MakeItem(NULL, &keys->suites,
-                          SSL_BUFFER_BASE(&cs), SSL_BUFFER_LEN(&cs));
-    if (rv != SECSuccess) {
-        goto loser;
-    }
-
+    pubKey = NULL;
     ss->esniKeys = keys;
     return SECSuccess;
 
 loser:
+    SECKEY_DestroyPublicKey(pubKey);
     tls13_DestroyESNIKeys(keys);
     return SECFailure;
 }

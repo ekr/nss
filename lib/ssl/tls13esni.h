@@ -22,11 +22,7 @@ struct sslEsniKeysStr {
 
 SECStatus
 SSLExp_SetESNIKeyPair(PRFileDesc *fd,
-                      SSLNamedGroup group,
                       SECKEYPrivateKey *privKey,
-                      SECKEYPublicKey *pubKey,
-                      const PRUint16 *cipherSuites,
-                      unsigned int cipherSuitesCount,
                       const PRUint8 *record, unsigned int recordLen);
 
 SECStatus SSLExp_EnableESNI(PRFileDesc *fd, const PRUint8 *esniKeys,

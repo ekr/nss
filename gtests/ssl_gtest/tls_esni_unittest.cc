@@ -94,8 +94,7 @@ static void SetupEsni(const std::shared_ptr<TlsAgent>& client,
   GenerateEsniKey(time(nullptr), ssl_grp_ec_curve25519, kDefaultSuites, &record,
                   &pub, &priv);
   SECStatus rv = SSL_SetESNIKeyPair(
-      server->ssl_fd(), ssl_grp_ec_curve25519, priv.get(), pub.get(),
-      &kDefaultSuites[0], kDefaultSuites.size(), record.data(), record.len());
+      server->ssl_fd(), priv.get(), record.data(), record.len());
   ASSERT_EQ(SECSuccess, rv);
 
   rv = SSL_EnableESNI(client->ssl_fd(), record.data(), record.len(), kDummySni);
@@ -290,8 +289,7 @@ TEST_P(TlsConnectTls13, ConnectEsniNoDummy) {
   GenerateEsniKey(time(nullptr), ssl_grp_ec_curve25519, kDefaultSuites, &record,
                   &pub, &priv);
   SECStatus rv = SSL_SetESNIKeyPair(
-      server_->ssl_fd(), ssl_grp_ec_curve25519, priv.get(), pub.get(),
-      &kDefaultSuites[0], kDefaultSuites.size(), record.data(), record.len());
+      server_->ssl_fd(), priv.get(), record.data(), record.len());
   ASSERT_EQ(SECSuccess, rv);
   rv = SSL_EnableESNI(client_->ssl_fd(), record.data(), record.len(), "");
   ASSERT_EQ(SECSuccess, rv);
@@ -315,9 +313,14 @@ TEST_P(TlsConnectTls13, ConnectEsniCSMismatch) {
 
   GenerateEsniKey(time(nullptr), ssl_grp_ec_curve25519, kDefaultSuites, &record,
                   &pub, &priv);
-  SECStatus rv = SSL_SetESNIKeyPair(
-      server_->ssl_fd(), ssl_grp_ec_curve25519, priv.get(), pub.get(),
-      &kChaChaSuite[0], kChaChaSuite.size(), record.data(), record.len());
+  PRUint8 encoded[1024];
+  unsigned int encoded_len;
+
+  SECStatus rv = SSL_EncodeESNIKeys(
+      &kChaChaSuite[0], kChaChaSuite.size(), ssl_grp_ec_curve25519, pub.get(),
+      100, time(0), time(0) + 10, encoded, &encoded_len, sizeof(encoded));
+  rv = SSL_SetESNIKeyPair(
+      server_->ssl_fd(), priv.get(), encoded, encoded_len);
   ASSERT_EQ(SECSuccess, rv);
   rv = SSL_EnableESNI(client_->ssl_fd(), record.data(), record.len(), "");
   ASSERT_EQ(SECSuccess, rv);

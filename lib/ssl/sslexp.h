@@ -467,17 +467,13 @@ typedef SECStatus(PR_CALLBACK *SSLResumptionTokenCallback)(
  * yourself.
  */
 #define SSL_SetESNIKeyPair(fd, \
-group, privKey, pubKey, cipherSuites, cipherSuiteCount, record, recordLen) \
+privKey, record, recordLen) \
 SSL_EXPERIMENTAL_API("SSL_SetESNIKeyPair",                                                            \
                      (PRFileDesc * _fd,                                                               \
-                      SSLNamedGroup _group,                                                           \
                       SECKEYPrivateKey * _privKey,                                                    \
-                      SECKEYPublicKey * _pubKey,                                                      \
-                      const PRUint16 *_cipherSuites,                                                  \
-                      unsigned int _cipherSuitesCount,                                                \
                       const PRUint8 *_record, unsigned int _recordLen),                               \
-                     (fd, group, privKey, pubKey, \
-                      cipherSuites, cipherSuiteCount, record, recordLen))
+                     (fd, privKey, \
+                      record, recordLen))
 
 /* Set the ESNI keys on a client
  *
