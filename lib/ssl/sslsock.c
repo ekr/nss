@@ -363,7 +363,6 @@ ssl_DupSocket(sslSocket *os)
         ss->resumptionTokenContext = os->resumptionTokenContext;
 
         if (os->esniKeys) {
-            /* TODO(ekr@rtfm.com): implement. */
             ss->esniKeys = tls13_CopyESNIKeys(os->esniKeys);
             if (!ss->esniKeys) {
                 goto loser;

@@ -702,6 +702,7 @@ tls13_ServerGetEsniAEAD(const sslSocket *ss, PRUint64 suite,
     *aeadp = aead;
     return SECSuccess;
 }
+
 SECStatus
 tls13_ServerDecryptEsniXtn(const sslSocket *ss, PRUint8 *in, unsigned int inLen,
                            PRUint8 *out, int *outLen, int maxLen)
