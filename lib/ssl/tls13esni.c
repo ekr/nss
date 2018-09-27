@@ -242,7 +242,6 @@ loser:
     PORT_SetError(SSL_ERROR_RX_MALFORMED_ESNI_KEYS);
 
     return SECFailure;
-    ;
 }
 
 /* Encode an ESNI keys structure. We only allow one key
@@ -465,6 +464,8 @@ SSLExp_EnableESNI(PRFileDesc *fd,
         return SECFailure;
     }
 
+    /* Delete in case it was set before. */
+    tls13_DestroyESNIKeys(ss->esniKeys);
     ss->esniKeys = keys;
 
     return SECSuccess;
