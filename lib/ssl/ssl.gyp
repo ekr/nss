@@ -68,6 +68,11 @@
             'UNSAFE_FUZZER_MODE',
           ],
         }],
+        [ 'OS=="dragonfly" or OS=="freebsd" or OS=="netbsd" or OS=="openbsd" or OS=="linux"', {
+          'cflags': [
+            '-std=gnu99',
+          ],
+        }],
       ],
       'dependencies': [
         '<(DEPTH)/exports.gyp:nss_exports',
