@@ -1107,7 +1107,7 @@ tls13_ClientSendEsniXtn(const sslSocket *ss, TLSExtensionData *xtnData,
     unsigned int sniStart;
     unsigned int sniLen;
     sslBuffer aadInput = SSL_BUFFER_EMPTY;
-    PRUint8 *keyShareBuf;
+    unsigned int keyShareBufStart;
     unsigned int keyShareBufLen;
 
     PORT_Memset(&keyMat, 0, sizeof(keyMat));
@@ -1164,14 +1164,14 @@ tls13_ClientSendEsniXtn(const sslSocket *ss, TLSExtensionData *xtnData,
     if (rv != SECSuccess) {
         return SECFailure;
     }
-    keyShareBuf = SSL_BUFFER_NEXT(buf);
+    keyShareBufStart = SSL_BUFFER_LEN(buf);
     rv = tls13_EncodeKeyShareEntry(buf,
                                    xtnData->esniPrivateKey->group->name,
                                    xtnData->esniPrivateKey->keys->pubKey);
     if (rv != SECSuccess) {
         return SECFailure;
     }
-    keyShareBufLen = SSL_BUFFER_NEXT(buf) - keyShareBuf;
+    keyShareBufLen = SSL_BUFFER_LEN(buf) - keyShareBufStart;
 
     if (tls13_GetHashSizeForHash(suiteDef->prf_hash) > sizeof(hash)) {
         PORT_Assert(PR_FALSE);
@@ -1198,7 +1198,9 @@ tls13_ClientSendEsniXtn(const sslSocket *ss, TLSExtensionData *xtnData,
     rv = tls13_ComputeESNIKeys(ss, xtnData->peerEsniShare,
                                xtnData->esniPrivateKey->keys,
                                suiteDef,
-                               hash, keyShareBuf, keyShareBufLen,
+                               hash,
+                               SSL_BUFFER_BASE(buf) + keyShareBufStart,
+                               keyShareBufLen,
                                CONST_CAST(PRUint8, ss->ssl3.hs.client_random),
                                &keyMat);
     if (rv != SECSuccess) {
