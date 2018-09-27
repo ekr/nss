@@ -348,6 +348,7 @@ SSLExp_SetESNIKeyPair(PRFileDesc *fd,
     sslEsniKeys *keys = NULL;
     SECKEYPublicKey *pubKey = NULL;
     SECItem data = { siBuffer, CONST_CAST(PRUint8, record), recordLen };
+    PLArenaPool *arena = NULL;
 
     ss = ssl_FindSocket(fd);
     if (!ss) {
@@ -394,10 +395,16 @@ SSLExp_SetESNIKeyPair(PRFileDesc *fd,
         PORT_SetError(PR_INVALID_ARGUMENT_ERROR);
         goto loser;
     }
-    pubKey = PORT_ZNew(SECKEYPublicKey);
+    arena = PORT_NewArena(DER_DEFAULT_CHUNKSIZE);
+    if (!arena) {
+        goto loser;
+    }
+    pubKey = PORT_ArenaZNew(arena, SECKEYPublicKey);
     if (!pubKey) {
         goto loser;
     }
+    pubKey->arena = arena;
+    arena = NULL; // From here, this will be destroyed with the pubkey.
     pubKey->pkcs11Slot = NULL;
     pubKey->pkcs11ID = CK_INVALID_HANDLE;
     rv = ssl_ImportECDHKeyShare(pubKey,
@@ -423,6 +430,7 @@ SSLExp_SetESNIKeyPair(PRFileDesc *fd,
     return SECSuccess;
 
 loser:
+    PORT_FreeArena(arena, PR_FALSE);
     SECKEY_DestroyPublicKey(pubKey);
     tls13_DestroyESNIKeys(keys);
     return SECFailure;
