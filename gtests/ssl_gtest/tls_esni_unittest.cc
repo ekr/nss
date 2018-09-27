@@ -67,6 +67,8 @@ static void GenerateEsniKey(time_t windowStart, SSLNamedGroup group,
 
   SECKEYPublicKey* pub = nullptr;
   SECKEYPrivateKey* priv = SECKEY_CreateECPrivateKey(&ecParams, &pub, nullptr);
+  ASSERT_NE(nullptr, priv);
+  SECITEM_FreeItem(&ecParams, PR_FALSE);
   PRUint8 encoded[1024];
   unsigned int encoded_len;
 
@@ -78,9 +80,13 @@ static void GenerateEsniKey(time_t windowStart, SSLNamedGroup group,
 
   if (pubKey) {
     pubKey->reset(pub);
+  } else {
+    SECKEY_DestroyPublicKey(pub);
   }
   if (privKey) {
     privKey->reset(priv);
+  } else {
+    SECKEY_DestroyPrivateKey(priv);
   }
   record->Truncate(0);
   record->Write(0, encoded, encoded_len);

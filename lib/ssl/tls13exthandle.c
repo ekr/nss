@@ -1284,7 +1284,7 @@ tls13_ServerHandleEsniXtn(const sslSocket *ss, TLSExtensionData *xtnData,
     rv = tls13_ServerDecryptEsniXtn(ss, data->data, data->len,
                                     plainText, &ptLen, data->len);
     if (rv) {
-        return SECFailure;
+        goto loser;
     }
 
     /* Read out the interior extension. */
