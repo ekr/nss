@@ -966,6 +966,7 @@ ssl3_DestroyExtensionData(TLSExtensionData *xtnData)
     }
     PORT_Free(xtnData->advertised);
     ssl_FreeEphemeralKeyPair(xtnData->esniPrivateKey);
+    SECITEM_FreeItem(&xtnData->keyShareExtension, PR_FALSE);
 }
 
 /* Free everything that has been allocated and then reset back to

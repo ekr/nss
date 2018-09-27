@@ -124,6 +124,7 @@ tls13_ClientSendKeyShareXtn(const sslSocket *ss, TLSExtensionData *xtnData,
 {
     SECStatus rv;
     PRCList *cursor;
+    unsigned int extStart;
     unsigned int lengthOffset;
 
     if (ss->vrange.max < SSL_LIBRARY_VERSION_TLS_1_3) {
@@ -135,8 +136,7 @@ tls13_ClientSendKeyShareXtn(const sslSocket *ss, TLSExtensionData *xtnData,
     SSL_TRC(3, ("%d: TLS13[%d]: send client key share xtn",
                 SSL_GETPID(), ss->fd));
 
-    /* Store the keyShareExtension for use later. */
-    xtnData->keyShareExtension.data = SSL_BUFFER_NEXT(buf);
+    extStart = SSL_BUFFER_LEN(buf);
 
     /* Save the offset to the length. */
     rv = sslBuffer_Skip(buf, 2, &lengthOffset);
@@ -160,8 +160,12 @@ tls13_ClientSendKeyShareXtn(const sslSocket *ss, TLSExtensionData *xtnData,
         return SECFailure;
     }
 
-    xtnData->keyShareExtension.len = SSL_BUFFER_NEXT(buf) -
-                                     xtnData->keyShareExtension.data;
+    rv = SECITEM_MakeItem(NULL, &xtnData->keyShareExtension,
+                          SSL_BUFFER_BASE(buf) + extStart,
+                          SSL_BUFFER_LEN(buf) - extStart);
+    if (rv != SECSuccess) {
+        return SECFailure;
+    }
 
     *added = PR_TRUE;
     return SECSuccess;

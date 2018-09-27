@@ -105,7 +105,7 @@ struct TLSExtensionDataStr {
     PRUint16 recordSizeLimit;
 
     /* ESNI working state */
-    SECItem keyShareExtension; /* Pointer to serialized extensions. */
+    SECItem keyShareExtension;
     ssl3CipherSuite esniSuite;
     sslEphemeralKeyPair *esniPrivateKey;
     /* Pointer into |ss->esniKeys->keyShares| */
