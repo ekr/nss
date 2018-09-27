@@ -466,14 +466,14 @@ typedef SECStatus(PR_CALLBACK *SSLResumptionTokenCallback)(
  * and be a subset of the configured suites or you risk bricking
  * yourself.
  */
-#define SSL_SetESNIKeyPair(fd, \
-privKey, record, recordLen) \
-SSL_EXPERIMENTAL_API("SSL_SetESNIKeyPair",                                                            \
-                     (PRFileDesc * _fd,                                                               \
-                      SECKEYPrivateKey * _privKey,                                                    \
-                      const PRUint8 *_record, unsigned int _recordLen),                               \
-                     (fd, privKey, \
-                      record, recordLen))
+#define SSL_SetESNIKeyPair(fd,                                              \
+                           privKey, record, recordLen)                      \
+    SSL_EXPERIMENTAL_API("SSL_SetESNIKeyPair",                              \
+                         (PRFileDesc * _fd,                                 \
+                          SECKEYPrivateKey * _privKey,                      \
+                          const PRUint8 *_record, unsigned int _recordLen), \
+                         (fd, privKey,                                      \
+                          record, recordLen))
 
 /* Set the ESNI keys on a client
  *
@@ -500,20 +500,20 @@ SSL_EXPERIMENTAL_API("SSL_SetESNIKeyPair",                                      
  * notBefore/notAfter -- validity range
  * out/outlen/maxlen -- where to output the data
  */
-#define SSL_EncodeESNIKeys(cipherSuites, cipherSuiteCount,              \
-                           group, pubKey, pad, notBefore, notAfter,     \
-                           out, outlen, maxlen)                         \
-    SSL_EXPERIMENTAL_API("SSL_EncodeESNIKeys",                          \
-                         (PRUint16 * _cipherSuites,                     \
-                          unsigned int _cipherSuiteCount,               \
-                          SSLNamedGroup _group,                         \
-                          SECKEYPublicKey *_pubKey,                     \
-                          PRUint16 _pad,                                \
-                          PRUint64 _notBefore, PRUint64 _notAfter,      \
-                          PRUint8 *_out, unsigned int *_outlen,         \
-                          unsigned int _maxlen),                        \
-                         (cipherSuites, cipherSuiteCount,               \
-                          group, pubKey, pad, notBefore, notAfter,      \
+#define SSL_EncodeESNIKeys(cipherSuites, cipherSuiteCount,          \
+                           group, pubKey, pad, notBefore, notAfter, \
+                           out, outlen, maxlen)                     \
+    SSL_EXPERIMENTAL_API("SSL_EncodeESNIKeys",                      \
+                         (PRUint16 * _cipherSuites,                 \
+                          unsigned int _cipherSuiteCount,           \
+                          SSLNamedGroup _group,                     \
+                          SECKEYPublicKey *_pubKey,                 \
+                          PRUint16 _pad,                            \
+                          PRUint64 _notBefore, PRUint64 _notAfter,  \
+                          PRUint8 *_out, unsigned int *_outlen,     \
+                          unsigned int _maxlen),                    \
+                         (cipherSuites, cipherSuiteCount,           \
+                          group, pubKey, pad, notBefore, notAfter,  \
                           out, outlen, maxlen))
 
 /* Deprecated experimental APIs */

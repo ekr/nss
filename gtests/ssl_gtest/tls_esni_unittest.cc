@@ -21,7 +21,8 @@ std::vector<uint16_t> kDefaultSuites = {TLS_AES_256_GCM_SHA384,
                                         TLS_AES_128_GCM_SHA256};
 std::vector<uint16_t> kChaChaSuite = {TLS_CHACHA20_POLY1305_SHA256};
 std::vector<uint16_t> kBogusSuites = {0};
-std::vector<uint16_t> kTls12Suites = {TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256};
+std::vector<uint16_t> kTls12Suites = {
+    TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256};
 
 static void NamedGroup2ECParams(SSLNamedGroup group, SECItem* params) {
   auto groupDef = ssl_LookupNamedGroup(group);
@@ -29,7 +30,8 @@ static void NamedGroup2ECParams(SSLNamedGroup group, SECItem* params) {
 
   auto oidData = SECOID_FindOIDByTag(groupDef->oidTag);
   ASSERT_NE(nullptr, oidData);
-  ASSERT_NE(nullptr, SECITEM_AllocItem(nullptr, params, (2 + oidData->oid.len)));
+  ASSERT_NE(nullptr,
+            SECITEM_AllocItem(nullptr, params, (2 + oidData->oid.len)));
 
   /*
    * params->data needs to contain the ASN encoding of an object ID (OID)
@@ -69,8 +71,8 @@ static void GenerateEsniKey(time_t windowStart, SSLNamedGroup group,
   unsigned int encoded_len;
 
   SECStatus rv = SSL_EncodeESNIKeys(
-      &cipher_suites[0], cipher_suites.size(), group, pub, 100,
-      windowStart, windowStart + 10, encoded, &encoded_len, sizeof(encoded));
+      &cipher_suites[0], cipher_suites.size(), group, pub, 100, windowStart,
+      windowStart + 10, encoded, &encoded_len, sizeof(encoded));
   ASSERT_EQ(SECSuccess, rv);
   ASSERT_GT(encoded_len, 0U);
 
@@ -93,8 +95,8 @@ static void SetupEsni(const std::shared_ptr<TlsAgent>& client,
 
   GenerateEsniKey(time(nullptr), ssl_grp_ec_curve25519, kDefaultSuites, &record,
                   &pub, &priv);
-  SECStatus rv = SSL_SetESNIKeyPair(
-      server->ssl_fd(), priv.get(), record.data(), record.len());
+  SECStatus rv = SSL_SetESNIKeyPair(server->ssl_fd(), priv.get(), record.data(),
+                                    record.len());
   ASSERT_EQ(SECSuccess, rv);
 
   rv = SSL_EnableESNI(client->ssl_fd(), record.data(), record.len(), kDummySni);
@@ -219,8 +221,7 @@ TEST_P(TlsAgentTestClient13, EsniExpired) {
 TEST_P(TlsAgentTestClient13, NoSniSoNoEsni) {
   EnsureInit();
   DataBuffer record;
-  GenerateEsniKey(time(0), ssl_grp_ec_curve25519, kDefaultSuites,
-                  &record);
+  GenerateEsniKey(time(0), ssl_grp_ec_curve25519, kDefaultSuites, &record);
   SSL_SetURL(agent_->ssl_fd(), "");
   ClientInstallEsni(agent_, record, 0);
   auto filter =
@@ -246,9 +247,8 @@ TEST_P(TlsConnectTls13, ConnectEsni) {
       MakeTlsFilter<TlsExtensionCapture>(client_, ssl_server_name_xtn);
   auto cFilterEsni =
       MakeTlsFilter<TlsExtensionCapture>(client_, ssl_tls13_encrypted_sni_xtn);
-  client_->SetFilter(
-      std::make_shared<ChainedPacketFilter>(
-          ChainedPacketFilterInit({cFilterSni, cFilterEsni})));
+  client_->SetFilter(std::make_shared<ChainedPacketFilter>(
+      ChainedPacketFilterInit({cFilterSni, cFilterEsni})));
   auto sfilter =
       MakeTlsFilter<TlsExtensionCapture>(server_, ssl_server_name_xtn);
   sfilter->EnableDecryption();
@@ -288,8 +288,8 @@ TEST_P(TlsConnectTls13, ConnectEsniNoDummy) {
 
   GenerateEsniKey(time(nullptr), ssl_grp_ec_curve25519, kDefaultSuites, &record,
                   &pub, &priv);
-  SECStatus rv = SSL_SetESNIKeyPair(
-      server_->ssl_fd(), priv.get(), record.data(), record.len());
+  SECStatus rv = SSL_SetESNIKeyPair(server_->ssl_fd(), priv.get(),
+                                    record.data(), record.len());
   ASSERT_EQ(SECSuccess, rv);
   rv = SSL_EnableESNI(client_->ssl_fd(), record.data(), record.len(), "");
   ASSERT_EQ(SECSuccess, rv);
@@ -304,7 +304,8 @@ TEST_P(TlsConnectTls13, ConnectEsniNoDummy) {
   ASSERT_TRUE(!sfilter->captured());
 }
 
-/* Tell the client that it supports AES but the server that it supports ChaCha */
+/* Tell the client that it supports AES but the server that it supports ChaCha
+ */
 TEST_P(TlsConnectTls13, ConnectEsniCSMismatch) {
   EnsureTlsSetup();
   ScopedSECKEYPublicKey pub;
@@ -319,8 +320,7 @@ TEST_P(TlsConnectTls13, ConnectEsniCSMismatch) {
   SECStatus rv = SSL_EncodeESNIKeys(
       &kChaChaSuite[0], kChaChaSuite.size(), ssl_grp_ec_curve25519, pub.get(),
       100, time(0), time(0) + 10, encoded, &encoded_len, sizeof(encoded));
-  rv = SSL_SetESNIKeyPair(
-      server_->ssl_fd(), priv.get(), encoded, encoded_len);
+  rv = SSL_SetESNIKeyPair(server_->ssl_fd(), priv.get(), encoded, encoded_len);
   ASSERT_EQ(SECSuccess, rv);
   rv = SSL_EnableESNI(client_->ssl_fd(), record.data(), record.len(), "");
   ASSERT_EQ(SECSuccess, rv);

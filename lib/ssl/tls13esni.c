@@ -377,7 +377,7 @@ SSLExp_SetESNIKeyPair(PRFileDesc *fd,
             return SECFailure;
         }
         const ssl3CipherSuiteCfg *suiteCfg =
-                ssl_LookupCipherSuiteCfg(asuite, ss->cipherSuites);
+            ssl_LookupCipherSuiteCfg(asuite, ss->cipherSuites);
         if (!ssl3_config_match(suiteCfg, ss->ssl3.policy, &vrange, ss)) {
             /* Illegal suite. */
             PORT_SetError(SEC_ERROR_INVALID_ARGS);
@@ -388,7 +388,7 @@ SSLExp_SetESNIKeyPair(PRFileDesc *fd,
     if (PR_CLIST_IS_EMPTY(&keys->keyShares)) {
         goto loser;
     }
-    TLS13KeyShareEntry *entry = (TLS13KeyShareEntry*)PR_LIST_HEAD(
+    TLS13KeyShareEntry *entry = (TLS13KeyShareEntry *)PR_LIST_HEAD(
         &keys->keyShares);
     if (entry->group->keaType != ssl_kea_ecdh) {
         PORT_SetError(PR_INVALID_ARGUMENT_ERROR);
