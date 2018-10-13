@@ -102,6 +102,7 @@ PRBool initializedServerSessionCache = PR_FALSE;
 
 static char *progName;
 static const char *requestFile;
+char *alpnProtos = NULL;
 
 secuPWData pwdata = { PW_NONE, 0 };
 
@@ -181,6 +182,29 @@ printSecurityInfo(PRFileDesc *fd)
                     signatureSchemeName(channel.signatureScheme));
         }
     }
+    if (alpnProtos) {
+        SSLNextProtoState state;
+        unsigned char buf[256];
+        unsigned int bufLen;
+
+        result = SSL_GetNextProto(fd, &state, buf, &bufLen, sizeof(buf) - 1);
+        if (result != SECSuccess) {
+            SECU_PrintError(progName, "Error calling SSL_GetNextProto");
+        } else {
+            switch (state) {
+                case SSL_NEXT_PROTO_NO_SUPPORT:
+                case SSL_NEXT_PROTO_NO_OVERLAP:
+                    fprintf(stderr, "ALPN not negotiated\n");
+                    break;
+                case SSL_NEXT_PROTO_SELECTED:
+                    buf[bufLen] = '\0';
+                    fprintf(stderr, "ALPN negotiated: %s\n", buf);
+                    break;
+                default:
+                    fprintf(stderr, "Unexpected ALPN result\n");
+            }
+        }
+    }
     cert = SSL_RevealCert(fd);
     if (cert) {
         char *ip = CERT_NameToAscii(&cert->issuer);
@@ -226,7 +250,7 @@ PrintUsageHeader()
             "  [-r N] [-w passwd] [-W pwfile] [-q [-t seconds]]\n"
             "  [-I groups] [-J signatureschemes]\n"
             "  [-A requestfile] [-L totalconnections] [-P {client,server}]\n"
-            "  [-N encryptedSniKeys] [-Q]\n"
+            "  [-N encryptedSniKeys] [-Q] [-B alpnprotos]\n"
             "\n",
             progName);
 }
@@ -311,6 +335,7 @@ PrintParameterUsage()
     fprintf(stderr, "%-20s Use DTLS\n", "-P {client, server}");
     fprintf(stderr, "%-20s Exit after handshake\n", "-Q");
     fprintf(stderr, "%-20s Encrypted SNI Keys\n", "-N");
+    fprintf(stderr, "%-20s ALPN Values [colon separated]\n", "-B");
 }
 
 static void
@@ -1200,6 +1225,53 @@ connectToServer(PRFileDesc *s, PRPollDesc *pollset)
     return SECSuccess;
 }
 
+static PRBool
+SetAlpn(PRFileDesc *fd, const char *protos)
+{
+    const char *col;
+    const char *start = protos;
+    SECItem *it = SECITEM_AllocItem(NULL, NULL,
+                                    PORT_Strlen(protos) + 1);
+    if (!it) {
+        SECU_PrintError(progName, "Couldn't allocate temporary");
+        return PR_FALSE;
+    }
+    
+    PRUint8 *ptr = it->data;
+    for (;;) {
+        unsigned int len;
+
+        col = PORT_Strchr(start, ':');
+        if (col) {
+            len = col - start;
+        } else {
+            len = PORT_Strlen(start);
+        }
+        if (!len || len > 255) {
+            SECU_PrintError(progName, "Invalid ALPN protos");
+            PORT_ZFree(it, PR_TRUE);
+            return PR_FALSE;
+        }
+
+        *ptr++ = (PRUint8)len;
+        PORT_Memcpy(ptr, start, len);
+        ptr+= len;
+        if (!col) {
+            break;
+        }
+        start = col + 1;
+    }
+
+    SECStatus rv = SSL_SetNextProtoNego(fd, it->data, it->len);
+    PORT_ZFree(it, PR_TRUE);
+
+    if (rv != SECSuccess) {
+        SECU_PrintError(progName, "Couldn't set ALPN");
+        return PR_FALSE;
+    }
+    return PR_TRUE;
+}
+
 static int
 run()
 {
@@ -1443,6 +1515,14 @@ run()
         SECITEM_FreeItem(&esniKeysBin, PR_FALSE);
         if (rv < 0) {
             SECU_PrintError(progName, "SSL_EnableESNI failed");
+            error = 1;
+            goto done;
+        }
+    }
+
+    if (alpnProtos) {
+        rv = SetAlpn(s, alpnProtos);
+        if (rv < 0) {
             error = 1;
             goto done;
         }
@@ -1707,7 +1787,7 @@ main(int argc, char **argv)
      * Please leave some time before reusing these.
      */
     optstate = PL_CreateOptState(argc, argv,
-                                 "46A:CDFGHI:J:KL:M:N:OP:QR:STUV:W:X:YZa:bc:d:fgh:m:n:op:qr:st:uvw:");
+                                 "46A:B:CDFGHI:J:KL:M:N:OP:QR:STUV:W:X:YZa:bc:d:fgh:m:n:op:qr:st:uvw:");
     while ((optstatus = PL_GetNextOpt(optstate)) == PL_OPT_OK) {
         switch (optstate->option) {
             case '?':
@@ -1728,6 +1808,10 @@ main(int argc, char **argv)
 
             case 'A':
                 requestFile = PORT_Strdup(optstate->value);
+                break;
+
+            case 'B':
+                alpnProtos = PORT_Strdup(optstate->value);
                 break;
 
             case 'C':
