@@ -11,39 +11,37 @@
 #include "sslimpl.h"
 #include "sslproto.h"
 
+/*
+ * 0 1 2 3 4 5 6 7
+ * +-+-+-+-+-+-+-+-+
+ * |0|0|1|C|S|L|E E|
+ * +-+-+-+-+-+-+-+-+
+ * | Connection ID |   Legend:
+ * | (if any,      |
+ * /  length as    /   C   - CID present
+ * |  negotiated)  |   S   - Sequence number length
+ * +-+-+-+-+-+-+-+-+   L   - Length present
+ * |  8 or 16 bit  |   E   - Epoch
+ * |Sequence Number|
+ * +-+-+-+-+-+-+-+-+
+ * | 16 bit Length |
+ * | (if present)  |
+ * +-+-+-+-+-+-+-+-+
+ */
 SECStatus
 dtls13_InsertCipherTextHeader(const sslSocket *ss, ssl3CipherSpec *cwSpec,
                               sslBuffer *wrBuf, PRBool *needsLength)
 {
-    PRUint32 seq;
-    SECStatus rv;
-
-    /* Avoid using short records for the handshake.  We pack multiple records
-     * into the one datagram for the handshake. */
-    if (ss->opt.enableDtlsShortHeader &&
-        cwSpec->epoch != TrafficKeyHandshake) {
-        *needsLength = PR_FALSE;
-        /* The short header is comprised of two octets in the form
-         * 0b001essssssssssss where 'e' is the low bit of the epoch and 's' is
-         * the low 12 bits of the sequence number. */
-        seq = 0x2000 |
-              (((uint64_t)cwSpec->epoch & 1) << 12) |
-              (cwSpec->nextSeqNum & 0xfff);
-        return sslBuffer_AppendNumber(wrBuf, seq, 2);
+    PRUint8 b1= 0x2c | ((PRUint8)cwSpec->epoch & 0x3);
+    if (sslBuffer_AppendNumber(wrBuf, b1, 1) != SECSuccess) {
+        return SECFailure;
     }
-
-    rv = sslBuffer_AppendNumber(wrBuf, ssl_ct_application_data, 1);
-    if (rv != SECSuccess) {
+    if (sslBuffer_AppendNumber(wrBuf,
+                               (cwSpec->nextSeqNum & 0xffff), 2)
+        != SECSuccess) {
         return SECFailure;
     }
 
-    /* The epoch and sequence number are encoded on 4 octets, with the epoch
-     * consuming the first two bits. */
-    seq = (((uint64_t)cwSpec->epoch & 3) << 30) | (cwSpec->nextSeqNum & 0x3fffffff);
-    rv = sslBuffer_AppendNumber(wrBuf, seq, 4);
-    if (rv != SECSuccess) {
-        return SECFailure;
-    }
     *needsLength = PR_TRUE;
     return SECSuccess;
 }
