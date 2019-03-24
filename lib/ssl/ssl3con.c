@@ -2252,11 +2252,22 @@ ssl_ProtectRecord(sslSocket *ss, ssl3CipherSpec *cwSpec, SSLContentType ct,
     }
 #else
     if (cwSpec->version >= SSL_LIBRARY_VERSION_TLS_1_3) {
+        PRUint8 *cipherText = SSL_BUFFER_NEXT(wrBuf);
+
         rv = tls13_ProtectRecord(ss, cwSpec, ct, pIn, contentLen, wrBuf);
+        if (rv != SECSuccess) {
+            return SECFailure;
+        }
+        if (IS_DTLS(ss)) {
+            rv = dtls13_MaskSequenceNumber(ss, cwSpec,
+                                           SSL_BUFFER_BASE(wrBuf),
+                                           cipherText);
+        }
     } else {
         rv = ssl3_MACEncryptRecord(cwSpec, ss->sec.isServer, IS_DTLS(ss), ct,
                                    pIn, contentLen, wrBuf);
     }
+
 #endif
     if (rv != SECSuccess) {
         return SECFailure; /* error was set */
@@ -12582,7 +12593,11 @@ ssl3_HandleRecord(sslSocket *ss, SSL3Ciphertext *cText)
         outOfOrderSpec = PR_TRUE;
     }
     isTLS = (PRBool)(spec->version > SSL_LIBRARY_VERSION_3_0);
-    if (IS_DTLS(ss)) {
+    if (IS_DTLS(ss) && spec->keyMaterial.sn) {
+        if (dtls13_MaskSequenceNumber(ss, spec, cText->hdr,
+                                      SSL_BUFFER_BASE(cText->buf)) != SECSuccess) {
+            return SECFailure;
+        }
         if (!dtls_IsRelevant(ss, spec, cText, &cText->seqNum)) {
             ssl_ReleaseSpecReadLock(ss); /*****************************/
             return SECSuccess;

@@ -130,6 +130,7 @@ const char kHkdfLabelExporterMasterSecret[] = "exp master";
 const char kHkdfLabelResumption[] = "resumption";
 const char kHkdfLabelTrafficUpdate[] = "traffic upd";
 const char kHkdfPurposeKey[] = "key";
+const char kHkdfPurposeSn[] = "sn";
 const char kHkdfPurposeIv[] = "iv";
 
 const char keylogLabelClientEarlyTrafficSecret[] = "CLIENT_EARLY_TRAFFIC_SECRET";
@@ -609,6 +610,7 @@ tls13_UseServerSecret(sslSocket *ss, SSLSecretDirection direction)
 {
     return ss->sec.isServer == (direction == ssl_secret_write);
 }
+
 
 static PK11SymKey **
 tls13_TrafficSecretRef(sslSocket *ss, SSLSecretDirection direction)
@@ -3328,6 +3330,7 @@ SSLExp_SecretCallback(PRFileDesc *fd, SSLSecretCallback cb, void *arg)
     return SECSuccess;
 }
 
+
 /* Derive traffic keys for the next cipher spec in the queue. */
 static SECStatus
 tls13_DeriveTrafficKeys(sslSocket *ss, ssl3CipherSpec *spec,
@@ -3389,6 +3392,21 @@ tls13_DeriveTrafficKeys(sslSocket *ss, ssl3CipherSpec *spec,
         LOG_ERROR(ss, SEC_ERROR_LIBRARY_FAILURE);
         PORT_Assert(0);
         goto loser;
+    }
+
+    if (IS_DTLS(ss) && spec->epoch > 0) {
+        rv = tls13_HkdfExpandLabel(prk, tls13_GetHash(ss),
+                                   NULL, 0,
+                                   kHkdfPurposeSn, strlen(kHkdfPurposeSn),
+                                   tls13_SequenceNumberEncryptionMechanism(
+                                       bulkAlgorithm),
+                                   keySize,
+                                   &spec->keyMaterial.sn);
+        if (rv != SECSuccess) {
+            LOG_ERROR(ss, SEC_ERROR_LIBRARY_FAILURE);
+            PORT_Assert(0);
+            goto loser;
+        }
     }
 
     rv = tls13_HkdfExpandLabelRaw(prk, tls13_GetHash(ss),

@@ -95,6 +95,7 @@ struct ssl3MACDefStr {
 typedef struct {
     PK11SymKey *key;
     PK11SymKey *macKey;
+    PK11SymKey *sn;
     PK11Context *macContext;
     PRUint8 iv[MAX_IV_LENGTH];
 } ssl3KeyMaterial;

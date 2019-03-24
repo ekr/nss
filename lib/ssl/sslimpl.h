@@ -795,7 +795,7 @@ typedef struct {
     /* |seqNum| eventually contains the reconstructed sequence number. */
     sslSequenceNumber seqNum;
     /* The header of the cipherText. */
-    const PRUint8 *hdr;
+    PRUint8 *hdr;
     unsigned int hdrLen;
 
     /* |buf| is the payload of the ciphertext. */

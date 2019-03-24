@@ -29,5 +29,10 @@ SECStatus dtls13_SendAck(sslSocket *ss);
 void dtls13_SendAckCb(sslSocket *ss);
 void dtls13_HolddownTimerCb(sslSocket *ss);
 void dtls_ReceivedFirstMessageInFlight(sslSocket *ss);
+SECStatus dtls13_MaskSequenceNumber(sslSocket *ss, ssl3CipherSpec *spec,
+                          PRUint8 *hdr, PRUint8 *cipherText);
+
+CK_MECHANISM_TYPE tls13_SequenceNumberEncryptionMechanism(CK_MECHANISM_TYPE bulkAlgorithm);
+
 
 #endif

@@ -10,6 +10,8 @@
 #include "ssl.h"
 #include "sslimpl.h"
 #include "sslproto.h"
+#include "keyhi.h"
+#include "pk11func.h"
 
 /*
  * 0 1 2 3 4 5 6 7
@@ -509,4 +511,53 @@ dtls13_HolddownTimerCb(sslSocket *ss)
                  SSL_GETPID(), ss->fd));
     ssl_CipherSpecReleaseByEpoch(ss, ssl_secret_read, TrafficKeyHandshake);
     ssl_ClearPRCList(&ss->ssl3.hs.dtlsRcvdHandshake, NULL);
+}
+
+SECStatus
+dtls13_MaskSequenceNumber(sslSocket *ss, ssl3CipherSpec *spec,
+                          PRUint8 *hdr, PRUint8 *cipherText)
+{
+    if (spec->keyMaterial.sn) {
+        PRUint8 mask[16];
+        unsigned int maskLen;
+        PORT_Assert(ss->version >= SSL_LIBRARY_VERSION_TLS_1_3);
+
+        CK_MECHANISM_TYPE bulkAlgorithm = ssl3_Alg2Mech(spec->cipherDef->calg);
+        /* TODO(ekr@rtfm.com): Implement ChaCha20 */
+        SECStatus rv = PK11_Encrypt(
+            spec->keyMaterial.sn,
+            tls13_SequenceNumberEncryptionMechanism(bulkAlgorithm),
+            NULL,
+            mask, &maskLen, sizeof(mask),
+            cipherText, sizeof(mask));
+
+        if (rv != SECSuccess) {
+            PORT_Assert(PR_FALSE);
+            return SECFailure;
+        }
+        PORT_Assert(maskLen == sizeof(mask));
+
+        hdr[1] ^= mask[0];
+        if (hdr[0] & 0x08) {
+            hdr[2] ^= mask[1];
+        }
+    }
+
+    return SECSuccess;
+}
+
+CK_MECHANISM_TYPE
+tls13_SequenceNumberEncryptionMechanism(CK_MECHANISM_TYPE bulkAlgorithm)
+{
+    switch (bulkAlgorithm) {
+        case CKM_AES_GCM:
+            return CKM_AES_ECB;
+        case CKM_NSS_CHACHA20_POLY1305:
+            PORT_Assert(PR_FALSE);
+            return CKM_INVALID_MECHANISM;
+            //return CKM_NSS_CHACHA20_CTR;
+        default:
+            PORT_Assert(PR_FALSE);
+    }
+    return CKM_INVALID_MECHANISM;
 }
