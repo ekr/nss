@@ -60,10 +60,17 @@ class Agent {
     if (rv != SECSuccess) return false;
 
     const SSLEKTKey ektKey = {
-      {0, 1, 2, 3},
-      4,
-      {4, 5, 6, 7, 8, 9},
-      6,
+      {
+        0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x05, 0x07,
+        0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
+      },
+      16,
+      {
+        0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x15, 0x17,
+        0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f,
+        0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27,
+      },
+      24,
       0xA0A0,
       0xB0B0B0
     };
@@ -82,27 +89,91 @@ class Agent {
   }
 
 
-  // Create the EKT Packet to send out.
+  // Create the SRTP keys packet to send out.
   //
   // I am using the ad-hoc structure
   //
   // struct {
-  //   uint8 marker == 0xff
-  //   opaque ektKey<0..2^8-1>;
-  //   opaque srtpMasterSalt<0..2^8-1>;
-  //   uint16 ektSPI;
-  //   uint32 ektTTL;
+  //   uint8 marker = 0xff;
+  //   uint16 profile;
+  //   opaque client_write_key<0..2^8-1>;
+  //   opaque server_write_key<0..2^8-1>;
+  //   opaque master_salt<0..2^8-1>;
   // }
-  void MarshallEKTPacket(const SSLEKTKey& key, DataBuffer* buffer) {
+  bool MarshalSRTPKeys(const SSLEKTKey& key, DataBuffer* buffer) {
     size_t index = 0;
+    size_t fullKeySize = 0;
+    size_t halfKeySize = 0;
+    size_t fullSaltSize = key.srtpMasterSaltLength;
+    size_t halfSaltSize = fullSaltSize / 2;
 
+    // Check which SRTP cipher is in use
+    uint16_t cipher;
+    auto rv = SSL_GetSRTPCipher(ssl_fd_.get(), &cipher);
+    if (rv != SECSuccess) {
+      return false;
+    }
+
+    switch (cipher) {
+      case SRTP_AEAD_AES_128_GCM:
+        fullKeySize = 16;
+        halfKeySize = 16;
+        break;
+      case SRTP_AEAD_AES_128_GCM_DOUBLE:
+        fullKeySize = 32;
+        halfKeySize = 16;
+        break;
+      case SRTP_AEAD_AES_256_GCM:
+        fullKeySize = 32;
+        halfKeySize = 32;
+        break;
+      case SRTP_AEAD_AES_256_GCM_DOUBLE:
+        fullKeySize = 64;
+        halfKeySize = 32;
+        break;
+      default:
+        return false;
+    }
+
+    // Extract the client and server keys
+    //
+    // Recall initial extract has the form:
+    //   client_k_i | client_k_o | server_k_i | server_k_o |
+    //   client_s_i | client_s_o | server_s_i | server_s_o
+    DataBuffer everything;
+    const std::string label = "EXTRACTOR-dtls_srtp";
+    const size_t exportSize = 2 * (fullKeySize + fullSaltSize);
+    everything.Allocate(exportSize);
+    rv = SSL_ExportKeyingMaterial(ssl_fd_.get(),
+                                  label.c_str(), label.size(), false,
+                                  nullptr, 0,
+                                  everything.data(), everything.len());
+    if (rv != SECSuccess) {
+      return false;
+    }
+
+    DataBuffer nothing;
+    DataBuffer clientWriteKey(everything);
+    DataBuffer serverWriteKey(everything);
+
+    // Splice() won't work unless this has a non-null buffer
+    nothing.Allocate(1);
+    nothing.Truncate(0);
+    clientWriteKey.Splice(nothing, 0, halfKeySize);
+    clientWriteKey.Truncate(halfKeySize);
+    serverWriteKey.Splice(nothing, 0, fullKeySize + halfKeySize);
+    serverWriteKey.Truncate(halfKeySize);
+
+    // Encode the packet
     index = buffer->Write(index, 0xff, 1);
-    index = buffer->Write(index, key.ektKeyLength, 1);
-    index = buffer->Write(index, key.ektKeyValue, key.ektKeyLength);
-    index = buffer->Write(index, key.srtpMasterSaltLength, 1);
-    index = buffer->Write(index, key.srtpMasterSalt, key.srtpMasterSaltLength);
-    index = buffer->Write(index, key.ektSPI, 2);
-    index = buffer->Write(index, key.ektTTL, 4);
+    index = buffer->Write(index, cipher, 2);
+    index = buffer->Write(index, clientWriteKey.len(), 1);
+    index = buffer->Write(index, clientWriteKey.data(), clientWriteKey.len());
+    index = buffer->Write(index, serverWriteKey.len(), 1);
+    index = buffer->Write(index, serverWriteKey.data(), serverWriteKey.len());
+    index = buffer->Write(index, halfSaltSize, 1);
+    index = buffer->Write(index, key.srtpMasterSalt + halfSaltSize, halfSaltSize);
+    return true;
   }
 
   bool NewData(const uint8_t* buf, size_t len) {
@@ -137,14 +208,17 @@ class Agent {
       std::cout << "SRTP cipher: " << srtp << std::endl;
 
       DataBuffer d;
-      MarshallEKTPacket(ektKey, &d);
+      if (!MarshalSRTPKeys(ektKey, &d)) {
+        std::cerr << "Couldn't marshal SRTP keys\n";
+        return false;
+      }
 
       auto n = socket_->Write(ssl_fd_.get(), d.data(), d.len());
       if (static_cast<size_t>(n) != d.len()) {
-        std::cerr << "Couldn't write EKT packet\n";
+        std::cerr << "Couldn't write SRTP keys\n";
         return false;
       }
-      std::cout << "Wrote EKT key\n";
+      std::cout << "Wrote SRTP keys\n";
     } else {
       auto err = PR_GetError();
       if (err == PR_WOULD_BLOCK_ERROR) {

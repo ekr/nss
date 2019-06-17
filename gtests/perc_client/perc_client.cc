@@ -143,7 +143,7 @@ class Client {
 int main(int argc, char** argv) {
   nss_test::Config config = {
     "127.0.0.1",
-    4433
+    4430
   };
 
   if (NSS_NoDB_Init(nullptr) != SECSuccess) {

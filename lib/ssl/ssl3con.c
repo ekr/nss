@@ -10917,7 +10917,7 @@ ssl3_SendEKTKey(sslSocket *ss, PRInt32 flags)
     SSLEKTKey *ektKey;
     int ektKeySize;
 
-    SSL_TRC(3, ("%d: SSL3[%d]: send finished handshake", SSL_GETPID(), ss->fd));
+    SSL_TRC(3, ("%d: SSL3[%d]: send ekt_key handshake", SSL_GETPID(), ss->fd));
 
     PORT_Assert(ss->opt.noLocks || ssl_HaveXmitBufLock(ss));
     PORT_Assert(ss->opt.noLocks || ssl_HaveSSL3HandshakeLock(ss));
